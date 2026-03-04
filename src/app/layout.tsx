@@ -1,13 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-export const metadata: Metadata = {
-  title: "RenSpand",
-  description: "RenSpand rute system",
-  themeColor: "#0b0b0b",
-  manifest: "/manifest.webmanifest",
-};
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,6 +11,16 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
+
+export const metadata: Metadata = {
+  title: "RenSpand",
+  description: "RenSpand route system",
+  manifest: "/manifest.webmanifest",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0b0b0b",
+};
 
 export default function RootLayout({
   children,
