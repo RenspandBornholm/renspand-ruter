@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import KortClient from "./KortClient";
 
-export default function Home() {
-  redirect("/kort");
+export default function Page() {
+  return <KortClient />;
 }
