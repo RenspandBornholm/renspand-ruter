@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import KortClient from "./KortClient";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return (
-    <Suspense fallback={<div style={{ padding: 16, color: "#ddd" }}>Indlæser…</div>}>
-      <KortClient />
-    </Suspense>
-  );
+export default function Home() {
+  redirect("/kort");
 }
