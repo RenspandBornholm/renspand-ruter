@@ -133,28 +133,38 @@ export default function NaestePage() {
     }
 
     // 3) Hent KUN kunder på ruten
-    const ids = Array.from(new Set(stopsRaw.map((s) => s.customer_id)));
 
-    const { data: cRows, error: cErr } = await supabase
-      .from("customers")
-      .select("id,name,address,city,lat,lng")
-      .in("id", ids);
+// Sørg for at stopsRaw er korrekt typet
+const stops: RouteStop[] = (stopsRaw ?? []) as RouteStop[];
 
-    if (cErr) throw cErr;
+// Saml kunde-ids
+const ids = Array.from(new Set(stops.map((s) => s.customer_id).filter(Boolean)));
 
-    const cMap = new Map((cRows ?? []).map((c: any) => [c.id, c as Customer]));
-    const withCustomers = stopsRaw.map((s) => ({
-      ...s,
-      customer: cMap.get(s.customer_id),
-    }));
+let cRows: Customer[] = [];
+if (ids.length > 0) {
+  const { data, error: cErr } = await supabase
+    .from("customers")
+    .select("id,name,address,city,lat,lng")
+    .in("id", ids);
 
-    setStops(withCustomers);
+  if (cErr) throw cErr;
+  cRows = (data ?? []) as Customer[];
+}
 
-    // start på første "planned"
-    const firstPlanned = withCustomers.findIndex((s) => s.status === "planned");
-    setIdx(firstPlanned >= 0 ? firstPlanned : 0);
-  }
+// Lav map: customerId -> Customer
+const cMap = new Map<string, Customer>(cRows.map((c) => [c.id, c]));
 
+// Merge stops + customer
+const withCustomers: RouteStop[] = stops.map((s) => ({
+  ...s,
+  customer: cMap.get(s.customer_id), // Customer | undefined (matcher customer?: Customer)
+}));
+
+setStops(withCustomers);
+
+// start på første "planned"
+const firstPlanned = withCustomers.findIndex((s) => s.status === "planned");
+setIdx(firstPlanned >= 0 ? firstPlanned : 0);
   // Load data når dato ændrer sig
   useEffect(() => {
     (async () => {
