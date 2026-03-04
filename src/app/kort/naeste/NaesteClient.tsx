@@ -114,13 +114,14 @@ export default function NaestePage() {
       return;
     }
 
-    setRouteDay(rd as RouteDay);
+    const rdTyped = rd as RouteDay;
+    setRouteDay(rdTyped);
 
     // 2) Hent stops
     const { data: sRows, error: sErr } = await supabase
       .from("route_stops")
       .select("id,route_day_id,customer_id,order_index,status,done_at,note")
-      .eq("route_day_id", (rd as any).id)
+      .eq("route_day_id", rdTyped.id)
       .order("order_index", { ascending: true });
 
     if (sErr) throw sErr;
@@ -133,38 +134,37 @@ export default function NaestePage() {
     }
 
     // 3) Hent KUN kunder på ruten
+    const ids = Array.from(
+      new Set(stopsRaw.map((s) => s.customer_id).filter(Boolean))
+    );
 
-// Sørg for at stopsRaw er korrekt typet
-const stops: RouteStop[] = (stopsRaw ?? []) as RouteStop[];
+    let cRows: Customer[] = [];
+    if (ids.length > 0) {
+      const { data, error: cErr } = await supabase
+        .from("customers")
+        .select("id,name,address,city,lat,lng")
+        .in("id", ids);
 
-// Saml kunde-ids
-const ids = Array.from(new Set(stops.map((s) => s.customer_id).filter(Boolean)));
+      if (cErr) throw cErr;
+      cRows = (data ?? []) as Customer[];
+    }
 
-let cRows: Customer[] = [];
-if (ids.length > 0) {
-  const { data, error: cErr } = await supabase
-    .from("customers")
-    .select("id,name,address,city,lat,lng")
-    .in("id", ids);
+    // Map: customerId -> Customer
+    const cMap = new Map<string, Customer>(cRows.map((c) => [c.id, c]));
 
-  if (cErr) throw cErr;
-  cRows = (data ?? []) as Customer[];
-}
+    // Merge stops + customer
+    const withCustomers: RouteStop[] = stopsRaw.map((s) => ({
+      ...s,
+      customer: cMap.get(s.customer_id),
+    }));
 
-// Lav map: customerId -> Customer
-const cMap = new Map<string, Customer>(cRows.map((c) => [c.id, c]));
+    setStops(withCustomers);
 
-// Merge stops + customer
-const withCustomers: RouteStop[] = stops.map((s) => ({
-  ...s,
-  customer: cMap.get(s.customer_id), // Customer | undefined (matcher customer?: Customer)
-}));
+    // start på første "planned"
+    const firstPlanned = withCustomers.findIndex((s) => s.status === "planned");
+    setIdx(firstPlanned >= 0 ? firstPlanned : 0);
+  } // ✅ VIGTIG: lukker loadRouteForDate
 
-setStops(withCustomers);
-
-// start på første "planned"
-const firstPlanned = withCustomers.findIndex((s) => s.status === "planned");
-setIdx(firstPlanned >= 0 ? firstPlanned : 0);
   // Load data når dato ændrer sig
   useEffect(() => {
     (async () => {
@@ -194,7 +194,9 @@ setIdx(firstPlanned >= 0 ? firstPlanned : 0);
   );
 
   function findNextPlannedIndex(fromIndex: number) {
-    return sortedStops.findIndex((s, i) => i > fromIndex && s.status === "planned");
+    return sortedStops.findIndex(
+      (s, i) => i > fromIndex && s.status === "planned"
+    );
   }
 
   function jumpToFirstPlanned() {
@@ -207,7 +209,7 @@ setIdx(firstPlanned >= 0 ? firstPlanned : 0);
     if (error) throw error;
 
     setStops((prev) =>
-      prev.map((s) => (s.id === stopId ? { ...s, ...patch } as RouteStop : s))
+      prev.map((s) => (s.id === stopId ? ({ ...s, ...patch } as RouteStop) : s))
     );
   }
 
@@ -218,23 +220,21 @@ setIdx(firstPlanned >= 0 ? firstPlanned : 0);
       setError(null);
 
       if (status === "done") {
-        await updateStop(current.id, { status: "done", done_at: new Date().toISOString() });
+        await updateStop(current.id, {
+          status: "done",
+          done_at: new Date().toISOString(),
+        });
       } else {
         await updateStop(current.id, { status: "skipped", done_at: null });
       }
 
-      // Vælg næste planned
       const nextPlanned = findNextPlannedIndex(idx);
       if (nextPlanned >= 0) {
         setIdx(nextPlanned);
 
-        // Åbn Maps til næste stop (hvis vi har kunden)
         const next = sortedStops[nextPlanned];
         const c = next?.customer;
         if (c) openGoogleMapsToCustomer(c);
-      } else {
-        // Ingen flere planned
-        // (ingen maps)
       }
     } catch (e: any) {
       setError(String(e?.message ?? e));
