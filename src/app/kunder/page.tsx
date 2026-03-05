@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import NavTabs from "@/app/components/NavTabs"; // ✅ NY
 
 type ServiceType = "single" | "subscription";
 type CustomerType = "private" | "business";
@@ -550,168 +551,174 @@ export default function KunderPage() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.topRow}>
-        <h1 style={styles.h1}>Kunder</h1>
-        <button onClick={logout} style={styles.btn}>
-          Log ud
-        </button>
-      </div>
-
-      {error && <div style={styles.error}>{error}</div>}
-
-      <div style={styles.card}>
-        <h2 style={styles.h2}>Opret kunde</h2>
-
-        {/* Service */}
-        <div style={{ marginTop: 12 }}>
-          <div style={styles.sectionLabel}>Vælg service</div>
-          <div style={styles.serviceGrid}>
-            <button
-              type="button"
-              onClick={() => setServiceType("single")}
-              style={{ ...styles.serviceCard, ...(serviceType === "single" ? styles.serviceCardActive : {}) }}
-            >
-              <div style={styles.serviceTitle}>Enkelt vask</div>
-              <div style={styles.serviceSub}>Engangsservice</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setServiceType("subscription")}
-              style={{ ...styles.serviceCard, ...(serviceType === "subscription" ? styles.serviceCardActive : {}) }}
-            >
-              <div style={styles.serviceTitle}>Abonnement</div>
-              <div style={styles.serviceSub}>Gentagende vask</div>
-            </button>
-          </div>
+    // ✅ Wrapper med bund-padding så fixed NavTabs ikke dækker indhold
+    <div style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom) + 24px)" }}>
+      <div style={styles.page}>
+        <div style={styles.topRow}>
+          <h1 style={styles.h1}>Kunder</h1>
+          <button onClick={logout} style={styles.btn}>
+            Log ud
+          </button>
         </div>
 
-        {/* Privat/Erhverv */}
-        <div style={{ marginTop: 12 }}>
-          <div style={styles.sectionLabel}>Kundetype</div>
-          <div style={styles.serviceGrid}>
-            <button
-              type="button"
-              onClick={() => setCustomerType("private")}
-              style={{ ...styles.serviceCard, ...(customerType === "private" ? styles.serviceCardActive : {}) }}
-            >
-              <div style={styles.serviceTitle}>Privat</div>
-              <div style={styles.serviceSub}>Husholdning</div>
-            </button>
+        {error && <div style={styles.error}>{error}</div>}
 
-            <button
-              type="button"
-              onClick={() => setCustomerType("business")}
-              style={{ ...styles.serviceCard, ...(customerType === "business" ? styles.serviceCardActive : {}) }}
-            >
-              <div style={styles.serviceTitle}>Erhverv</div>
-              <div style={styles.serviceSub}>Firma / institution</div>
-            </button>
-          </div>
-        </div>
+        <div style={styles.card}>
+          <h2 style={styles.h2}>Opret kunde</h2>
 
-        <div style={styles.formGrid}>
-          <div>
-            <label style={styles.label}>Navn</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Fx Jens Hansen" style={styles.input} />
-          </div>
+          {/* Service */}
+          <div style={{ marginTop: 12 }}>
+            <div style={styles.sectionLabel}>Vælg service</div>
+            <div style={styles.serviceGrid}>
+              <button
+                type="button"
+                onClick={() => setServiceType("single")}
+                style={{ ...styles.serviceCard, ...(serviceType === "single" ? styles.serviceCardActive : {}) }}
+              >
+                <div style={styles.serviceTitle}>Enkelt vask</div>
+                <div style={styles.serviceSub}>Engangsservice</div>
+              </button>
 
-          <div>
-            <label style={styles.label}>By</label>
-            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Fx Rønne" style={styles.input} />
+              <button
+                type="button"
+                onClick={() => setServiceType("subscription")}
+                style={{ ...styles.serviceCard, ...(serviceType === "subscription" ? styles.serviceCardActive : {}) }}
+              >
+                <div style={styles.serviceTitle}>Abonnement</div>
+                <div style={styles.serviceSub}>Gentagende vask</div>
+              </button>
+            </div>
           </div>
 
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label style={styles.label}>Adresse</label>
-            <input
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Fx Nørregade 10"
-              style={styles.input}
-            />
+          {/* Privat/Erhverv */}
+          <div style={{ marginTop: 12 }}>
+            <div style={styles.sectionLabel}>Kundetype</div>
+            <div style={styles.serviceGrid}>
+              <button
+                type="button"
+                onClick={() => setCustomerType("private")}
+                style={{ ...styles.serviceCard, ...(customerType === "private" ? styles.serviceCardActive : {}) }}
+              >
+                <div style={styles.serviceTitle}>Privat</div>
+                <div style={styles.serviceSub}>Husholdning</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCustomerType("business")}
+                style={{ ...styles.serviceCard, ...(customerType === "business" ? styles.serviceCardActive : {}) }}
+              >
+                <div style={styles.serviceTitle}>Erhverv</div>
+                <div style={styles.serviceSub}>Firma / institution</div>
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div style={{ marginTop: 14 }}>
-          <div style={styles.sectionLabel}>Beholdertype (klik for at vælge)</div>
+          <div style={styles.formGrid}>
+            <div>
+              <label style={styles.label}>Navn</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Fx Jens Hansen" style={styles.input} />
+            </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            {(Object.keys(BIN_LABEL) as BinType[]).map((bin) => {
-              const selected = selectedBins[bin];
+            <div>
+              <label style={styles.label}>By</label>
+              <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Fx Rønne" style={styles.input} />
+            </div>
 
-              return (
-                <div key={bin} style={styles.binBox}>
-                  <label style={styles.binHeader}>
-                    <input type="checkbox" checked={selected} onChange={() => toggleBin(bin)} style={styles.checkbox} />
-                    <span style={styles.binName}>
-                      {BIN_ICON[bin]} {BIN_LABEL[bin]}
-                    </span>
-                  </label>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={styles.label}>Adresse</label>
+              <input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Fx Nørregade 10"
+                style={styles.input}
+              />
+            </div>
+          </div>
 
-                  {selected && (
-                    <div style={styles.binSettingsRow}>
-                      {serviceType === "subscription" ? (
-                        <div style={{ flex: 1 }}>
-                          <div style={styles.smallLabel}>Frekvens</div>
-                          <div style={styles.freqRow}>
-                            {FREQS.map((f) => {
-                              const active = binSettings[bin].frequency_months === f;
-                              return (
-                                <button
-                                  type="button"
-                                  key={f}
-                                  onClick={() => updateBinSetting(bin, f)}
-                                  style={{ ...styles.pillBtn, ...(active ? styles.pillBtnActive : {}) }}
-                                >
-                                  {f} md.
-                                </button>
-                              );
-                            })}
+          <div style={{ marginTop: 14 }}>
+            <div style={styles.sectionLabel}>Beholdertype (klik for at vælge)</div>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              {(Object.keys(BIN_LABEL) as BinType[]).map((bin) => {
+                const selected = selectedBins[bin];
+
+                return (
+                  <div key={bin} style={styles.binBox}>
+                    <label style={styles.binHeader}>
+                      <input type="checkbox" checked={selected} onChange={() => toggleBin(bin)} style={styles.checkbox} />
+                      <span style={styles.binName}>
+                        {BIN_ICON[bin]} {BIN_LABEL[bin]}
+                      </span>
+                    </label>
+
+                    {selected && (
+                      <div style={styles.binSettingsRow}>
+                        {serviceType === "subscription" ? (
+                          <div style={{ flex: 1 }}>
+                            <div style={styles.smallLabel}>Frekvens</div>
+                            <div style={styles.freqRow}>
+                              {FREQS.map((f) => {
+                                const active = binSettings[bin].frequency_months === f;
+                                return (
+                                  <button
+                                    type="button"
+                                    key={f}
+                                    onClick={() => updateBinSetting(bin, f)}
+                                    style={{ ...styles.pillBtn, ...(active ? styles.pillBtnActive : {}) }}
+                                  >
+                                    {f} md.
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div style={{ opacity: 0.8, fontSize: 13 }}>Enkelt vask: ingen frekvens (1 gang)</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                        ) : (
+                          <div style={{ opacity: 0.8, fontSize: 13 }}>Enkelt vask: ingen frekvens (1 gang)</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
+
+          <button onClick={saveCustomer} style={styles.saveBtn} disabled={saving}>
+            {saving ? "Gemmer..." : "Gem kunde"}
+          </button>
         </div>
 
-        <button onClick={saveCustomer} style={styles.saveBtn} disabled={saving}>
-          {saving ? "Gemmer..." : "Gem kunde"}
-        </button>
-      </div>
+        {/* Kundeliste i 4 sektioner */}
+        <div style={{ marginTop: 28 }}>
+          <h2 style={styles.h2}>Kundeliste</h2>
 
-      {/* Kundeliste i 4 sektioner */}
-      <div style={{ marginTop: 28 }}>
-        <h2 style={styles.h2}>Kundeliste</h2>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={styles.groupCard}>
+              <div style={styles.groupTitle}>Privat · Enkelt</div>
+              {renderTable(groups.private_single)}
+            </div>
 
-        <div style={{ display: "grid", gap: 14 }}>
-          <div style={styles.groupCard}>
-            <div style={styles.groupTitle}>Privat · Enkelt</div>
-            {renderTable(groups.private_single)}
-          </div>
+            <div style={styles.groupCard}>
+              <div style={styles.groupTitle}>Privat · Abonnement</div>
+              {renderTable(groups.private_sub)}
+            </div>
 
-          <div style={styles.groupCard}>
-            <div style={styles.groupTitle}>Privat · Abonnement</div>
-            {renderTable(groups.private_sub)}
-          </div>
+            <div style={styles.groupCard}>
+              <div style={styles.groupTitle}>Erhverv · Enkelt</div>
+              {renderTable(groups.business_single)}
+            </div>
 
-          <div style={styles.groupCard}>
-            <div style={styles.groupTitle}>Erhverv · Enkelt</div>
-            {renderTable(groups.business_single)}
-          </div>
-
-          <div style={styles.groupCard}>
-            <div style={styles.groupTitle}>Erhverv · Abonnement</div>
-            {renderTable(groups.business_sub)}
+            <div style={styles.groupCard}>
+              <div style={styles.groupTitle}>Erhverv · Abonnement</div>
+              {renderTable(groups.business_sub)}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* ✅ Fixed bundmenu */}
+      <NavTabs />
     </div>
   );
 }
@@ -857,12 +864,15 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   tableWrap: {
-    border: "1px solid #2b2b2b",
-    borderRadius: 14,
-    overflow: "hidden",
-    background: "#121212",
-  },
-  table: { width: "100%", borderCollapse: "collapse" },
+  border: "1px solid #2b2b2b",
+  borderRadius: 14,
+  background: "#121212",
+
+  overflowX: "auto",
+  overflowY: "hidden",
+  WebkitOverflowScrolling: "touch",
+},  
+table: { width: "100%", borderCollapse: "collapse", minWidth: 900 },
   th: {
     textAlign: "left",
     padding: "12px 10px",
@@ -870,6 +880,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     opacity: 0.9,
     background: "#101010",
+whiteSpace: "nowrap",
   },
   td: {
     padding: "12px 10px",

@@ -1,0 +1,27 @@
+.wrap {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+/* Desktop layout */
+@media (min-width: 980px) {
+  .wrap {
+    grid-template-columns: 1fr 360px;
+  }
+}
+
+.map {
+  width: 100%;
+  height: min(70vh, 520px);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.panel {
+  padding: 12px;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 12px;
+}

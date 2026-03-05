@@ -15,7 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "RenSpand",
   description: "RenSpand route system",
-  manifest: "/manifest.webmanifest",
+  icons: {
+    apple: "/apple-touch-icon.png",
+  },
+manifest: "/manifest.webmanifest",
 };
 
 export const viewport: Viewport = {

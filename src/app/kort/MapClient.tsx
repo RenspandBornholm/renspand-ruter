@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import styles from "./MapClient.module.css";
 
 type Stop = {
   id: string;
@@ -17,7 +18,7 @@ type Stop = {
   };
   bins: Array<{
     bin_type: string;
-    pickup_day: string; // Søn/Man/...
+    pickup_day: string;
     week_group: string | null;
     frequency_months: number | null;
   }>;
@@ -36,7 +37,7 @@ export default function MapClient({ mapId, hq, stops }: Props) {
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
 
   const activeStop = useMemo(
-    () => stops.find(s => s.id === activeStopId) || null,
+    () => stops.find((s) => s.id === activeStopId) || null,
     [stops, activeStopId]
   );
 
@@ -44,7 +45,6 @@ export default function MapClient({ mapId, hq, stops }: Props) {
     if (!mapRef.current) return;
     if (!window.google?.maps) return;
 
-    // Init map kun én gang
     if (!mapObjRef.current) {
       mapObjRef.current = new google.maps.Map(mapRef.current, {
         center: { lat: hq.lat, lng: hq.lng },
@@ -58,11 +58,9 @@ export default function MapClient({ mapId, hq, stops }: Props) {
 
     const map = mapObjRef.current;
 
-    // Ryd gamle markers
-    markersRef.current.forEach(m => m.setMap(null));
+    markersRef.current.forEach((m) => m.setMap(null));
     markersRef.current = [];
 
-    // HQ marker
     const hqMarker = new google.maps.Marker({
       position: { lat: hq.lat, lng: hq.lng },
       map,
@@ -71,7 +69,6 @@ export default function MapClient({ mapId, hq, stops }: Props) {
     });
     markersRef.current.push(hqMarker);
 
-    // Stop markers
     const bounds = new google.maps.LatLngBounds();
     bounds.extend({ lat: hq.lat, lng: hq.lng });
 
@@ -88,7 +85,6 @@ export default function MapClient({ mapId, hq, stops }: Props) {
       bounds.extend({ lat: s.customer.lat, lng: s.customer.lng });
     }
 
-    // FitBounds (kun hvis vi har noget)
     if (stops.length > 0) {
       map.fitBounds(bounds, 60);
     } else {
@@ -98,7 +94,6 @@ export default function MapClient({ mapId, hq, stops }: Props) {
   }, [mapId, hq.lat, hq.lng, hq.label, stops]);
 
   const openRouteInGoogleMaps = () => {
-    // Google Maps URL: origin + destination + waypoints
     const origin = `${hq.lat},${hq.lng}`;
     const ordered = [...stops].sort((a, b) => a.order_index - b.order_index);
 
@@ -109,10 +104,7 @@ export default function MapClient({ mapId, hq, stops }: Props) {
 
     const destination = `${ordered[ordered.length - 1].customer.lat},${ordered[ordered.length - 1].customer.lng}`;
     const waypointStops = ordered.slice(0, -1);
-
-    const waypoints = waypointStops
-      .map(s => `${s.customer.lat},${s.customer.lng}`)
-      .join("|");
+    const waypoints = waypointStops.map((s) => `${s.customer.lat},${s.customer.lng}`).join("|");
 
     const url = new URL("https://www.google.com/maps/dir/");
     url.searchParams.set("api", "1");
@@ -125,18 +117,9 @@ export default function MapClient({ mapId, hq, stops }: Props) {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 12 }}>
-      <div
-        ref={mapRef}
-        style={{
-          height: "70vh",
-          width: "100%",
-          borderRadius: 12,
-          overflow: "hidden",
-          border: "1px solid rgba(0,0,0,0.1)",
-        }}
-      />
-      <div style={{ padding: 12, border: "1px solid rgba(0,0,0,0.1)", borderRadius: 12 }}>
+    <div className={styles.wrap}>
+      <div ref={mapRef} className={styles.map} />
+      <div className={styles.panel}>
         <button onClick={openRouteInGoogleMaps} style={{ width: "100%", padding: 12 }}>
           Åbn rute (Google Maps)
         </button>

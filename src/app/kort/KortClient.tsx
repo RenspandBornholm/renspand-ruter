@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import { supabase } from "@/lib/supabaseClient";
+import NavTabs from "@/app/components/NavTabs";
 
 type Customer = {
   id: string;
@@ -159,7 +160,9 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
   const endAtHQ = false;
 
   const origin = HQ;
-  const destination = endAtHQ ? HQ : `${usable[usable.length - 1].lat},${usable[usable.length - 1].lng}`;
+  const destination = endAtHQ
+    ? HQ
+    : `${usable[usable.length - 1].lat},${usable[usable.length - 1].lng}`;
 
   const waypointPoints = endAtHQ ? usable : usable.slice(0, -1);
   const waypoints = waypointPoints.map((p) => `${p.lat},${p.lng}`).join("|");
@@ -176,22 +179,24 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
 
 export default function KortPage() {
   const router = useRouter();
-const searchParams = useSearchParams();
-const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const initialDate = searchParams.get("date") || toYMD(new Date());
-const [routeDate, setRouteDate] = useState<string>(initialDate);
+  const [routeDate, setRouteDate] = useState<string>(initialDate);
   const [routeDay, setRouteDay] = useState<RouteDay | null>(null);
   const [stops, setStops] = useState<RouteStop[]>([]);
-// Hold URL i sync med valgt dato
-useEffect(() => {
-  const sp = new URLSearchParams(searchParams.toString());
-  sp.set("date", routeDate);
-  router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
-}, [routeDate]);
+
+  // Hold URL i sync med valgt dato
+  useEffect(() => {
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.set("date", routeDate);
+    router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeDate]);
 
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
@@ -557,21 +562,21 @@ useEffect(() => {
     );
   }
 
-  // ✅ SMART foreslå: brug BOFA-datoer fra bin_pickup_dates
+  // ✅ SMART foreslå: brug BOFA-datoer fra bofa_pickups
   async function suggestCustomersForDate() {
     try {
       setError(null);
       const rd = routeDay ?? (await loadOrCreateRouteDay(routeDate));
 
       const dateYMD =
-  routeDate.split("-")[0]?.length === 4
-    ? routeDate
-    : routeDate.split("-").reverse().join("-");
+        routeDate.split("-")[0]?.length === 4
+          ? routeDate
+          : routeDate.split("-").reverse().join("-");
 
-const { data: dateRows, error: dErr } = await supabase
-  .from("bofa_pickups")
-  .select("customer_id,bin_type,pickup_date")
-  .eq("pickup_date", dateYMD);
+      const { data: dateRows, error: dErr } = await supabase
+        .from("bofa_pickups")
+        .select("customer_id,bin_type,pickup_date")
+        .eq("pickup_date", dateYMD);
 
       if (dErr) throw dErr;
 
@@ -646,8 +651,11 @@ const { data: dateRows, error: dErr } = await supabase
     ? `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`
     : "";
 
+  // ✅ Til bundmenu: giv luft i bunden så den ikke dækker indhold på mobil
+  const BOTTOM_NAV_H = 76;
+
   return (
-    <div style={{ padding: 24, color: "#ddd" }}>
+    <div style={{ padding: 24, color: "#ddd", paddingBottom: 24 + BOTTOM_NAV_H }}>
       {/* Google Maps Script (stabil) */}
       {apiKey ? (
         <Script
@@ -737,20 +745,21 @@ const { data: dateRows, error: dErr } = await supabase
         >
           Åbn rute (fra HQ)
         </button>
-<button
-  onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
-  style={{
-    padding: "10px 12px",
-    borderRadius: 12,
-    background: "#1a1a1a",
-    border: "1px solid #444",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 900,
-  }}
->
-  Næste stop (app)
-</button>
+
+        <button
+          onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: "#1a1a1a",
+            border: "1px solid #444",
+            color: "#fff",
+            cursor: "pointer",
+            fontWeight: 900,
+          }}
+        >
+          Næste stop (app)
+        </button>
 
         <div style={{ flex: 1 }} />
 
@@ -817,7 +826,15 @@ const { data: dateRows, error: dErr } = await supabase
         </div>
       </div>
 
-      <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "380px 1fr", gap: 16 }}>
+      {/* ✅ Mere mobilvenlig grid: auto-fit -> 1 kolonne på små skærme */}
+      <div
+        style={{
+          marginTop: 18,
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 420px) minmax(0, 1fr)",
+          gap: 16,
+        }}
+      >
         <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
           <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
           <div style={{ marginTop: 6, opacity: 0.8 }}>{sortedStops.length} stop</div>
@@ -831,10 +848,7 @@ const { data: dateRows, error: dErr } = await supabase
               const todays = todayBinsByCustomer[s.customer_id] ?? [];
 
               return (
-                <div
-                  key={s.id}
-                  style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}
-                >
+                <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                     <div style={{ fontWeight: 900 }}>
                       {i + 1}. {c?.name ?? "(ukendt)"}{" "}
@@ -1003,6 +1017,9 @@ const { data: dateRows, error: dErr } = await supabase
           />
         </div>
       </div>
+
+      {/* ✅ Bundmenu: Kort / Kunder */}
+      <NavTabs />
     </div>
   );
 }
