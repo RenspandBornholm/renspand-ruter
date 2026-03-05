@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import NavTabs from "@/app/components/NavTabs"; // ✅ NY
+import NavTabs from "@/app/components/NavTabs";
 
 type ServiceType = "single" | "subscription";
 type CustomerType = "private" | "business";
@@ -445,109 +445,110 @@ export default function KunderPage() {
 
     return (
       <div style={styles.tableOuter}>
-  <div style={styles.tableScroll}>
-    <table style={styles.table}>          <thead>
-            <tr>
-              <th style={styles.th}>Navn</th>
-              <th style={styles.th}>Adresse</th>
-              <th style={styles.th}>By</th>
-              <th style={styles.th}>Service</th>
-              <th style={styles.th}>Spande</th>
-              <th style={{ ...styles.th, textAlign: "right" }}>Handling</th>
-            </tr>
-          </thead>
+        <div style={styles.tableScroll}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Navn</th>
+                <th style={styles.th}>Adresse</th>
+                <th style={styles.th}>By</th>
+                <th style={styles.th}>Service</th>
+                <th style={styles.th}>Spande</th>
+                <th style={{ ...styles.th, textAlign: "right" }}>Handling</th>
+              </tr>
+            </thead>
 
-          <tbody>
-            {list.map((c) => {
-              const bins = binsByCustomer[c.id] ?? [];
-              const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
+            <tbody>
+              {list.map((c) => {
+                const bins = binsByCustomer[c.id] ?? [];
+                const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
 
-              const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
-              const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
-              const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
+                const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
+                const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
+                const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
 
-              const service = (c.service_type ?? "single") as ServiceType;
+                const service = (c.service_type ?? "single") as ServiceType;
 
-              return (
-                <tr key={c.id}>
-                  <td style={styles.td}>
-                    <div style={{ fontWeight: 900 }}>{c.name}</div>
+                return (
+                  <tr key={c.id}>
+                    <td style={styles.td}>
+                      <div style={{ fontWeight: 900 }}>{c.name}</div>
 
-                    {lastDoneYMD ? (
-                      <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span style={styles.pill}>Rengjort d. {lastDoneYMD}</span>
-                        {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
-                      </div>
-                    ) : (
-                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
-                    )}
-                  </td>
+                      {lastDoneYMD ? (
+                        <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <span style={styles.pill}>Rengjort d. {lastDoneYMD}</span>
+                          {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
+                      )}
+                    </td>
 
-                  <td style={styles.td}>{c.address}</td>
-                  <td style={styles.td}>{c.city}</td>
-                  <td style={styles.td}>{service === "subscription" ? "Abonnement" : "Enkelt"}</td>
+                    <td style={styles.td}>{c.address}</td>
+                    <td style={styles.td}>{c.city}</td>
+                    <td style={styles.td}>{service === "subscription" ? "Abonnement" : "Enkelt"}</td>
 
-                  <td style={styles.td}>
-                    {bins.length ? (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {bins.map((b) => {
-                          const key = `${c.id}__${b.bin_type}`;
-                          const next = nextPickupByCustomerBin[key] ?? null;
+                    <td style={styles.td}>
+                      {bins.length ? (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          {bins.map((b) => {
+                            const key = `${c.id}__${b.bin_type}`;
+                            const next = nextPickupByCustomerBin[key] ?? null;
 
-                          return (
-                            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                              <div style={{ minWidth: 240 }}>
-                                <b>
-                                  {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
-                                </b>{" "}
-                                <span style={{ opacity: 0.85 }}>
-                                  · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
-                                </span>
+                            return (
+                              <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                <div style={{ minWidth: 240 }}>
+                                  <b>
+                                    {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
+                                  </b>{" "}
+                                  <span style={{ opacity: 0.85 }}>
+                                    · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
+                                  </span>
 
-                                <div style={{ marginTop: 6 }}>
-                                  {next ? (
-                                    <span style={styles.pill}>Næste: {next}</span>
-                                  ) : (
-                                    <span style={{ fontSize: 12, opacity: 0.65 }}>Ingen datoer</span>
-                                  )}
+                                  <div style={{ marginTop: 6 }}>
+                                    {next ? (
+                                      <span style={styles.pill}>Næste: {next}</span>
+                                    ) : (
+                                      <span style={{ fontSize: 12, opacity: 0.65 }}>Ingen datoer</span>
+                                    )}
+                                  </div>
                                 </div>
+
+                                <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
+                                  Importér
+                                </button>
                               </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span style={{ opacity: 0.7 }}>-</span>
+                      )}
+                    </td>
 
-                              <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
-                                Importér
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <span style={{ opacity: 0.7 }}>-</span>
-                    )}
-                  </td>
+                    <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button
+                        onClick={() => geocodeCustomer(c)}
+                        disabled={!c.address || !c.city}
+                        style={{
+                          ...styles.smallBtn,
+                          opacity: !c.address || !c.city ? 0.45 : 1,
+                        }}
+                      >
+                        {hasCoords ? "Opdater koordinater" : "Find koordinater"}
+                      </button>
 
-                  <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
-                    <button
-                      onClick={() => geocodeCustomer(c)}
-                      disabled={!c.address || !c.city}
-                      style={{
-                        ...styles.smallBtn,
-                        opacity: !c.address || !c.city ? 0.45 : 1,
-                      }}
-                    >
-                      {hasCoords ? "Opdater koordinater" : "Find koordinater"}
-                    </button>
-
-                    <button onClick={() => deleteCustomer(c.id)} style={{ ...styles.smallBtn, ...styles.dangerBtn }}>
-                      Slet
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      <button onClick={() => deleteCustomer(c.id)} style={{ ...styles.smallBtn, ...styles.dangerBtn }}>
+                        Slet
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-</div>
     );
   }
 
@@ -739,6 +740,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   h1: { fontSize: 44, margin: 0, letterSpacing: 0.2 },
   h2: { fontSize: 26, margin: "0 0 10px" },
+
   btn: {
     padding: "10px 14px",
     borderRadius: 10,
@@ -747,6 +749,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#fff",
     cursor: "pointer",
   },
+
   error: {
     marginTop: 12,
     padding: "10px 12px",
@@ -756,26 +759,27 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffb4b4",
     whiteSpace: "pre-wrap",
   },
-tableOuter: {
-  border: "1px solid #2b2b2b",
-  borderRadius: 14,
-  background: "#121212",
-  overflow: "hidden",
-},
 
-tableScroll: {
-  overflowX: "auto",
-  overflowY: "hidden",
-  WebkitOverflowScrolling: "touch",
-  width: "100%",
-  touchAction: "pan-x",
-},
+  // ✅ Mobil-venlig horisontal scroll for tabellen
+  tableOuter: {
+    border: "1px solid #2b2b2b",
+    borderRadius: 14,
+    background: "#121212",
+    overflow: "hidden",
+  },
+  tableScroll: {
+    overflowX: "auto",
+    overflowY: "hidden",
+    WebkitOverflowScrolling: "touch",
+    width: "100%",
+    touchAction: "pan-x",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: 1000,
+  },
 
-table: {
-  width: "100%",
-  borderCollapse: "collapse",
-  minWidth: 1000,
-},
   card: {
     marginTop: 18,
     border: "1px solid #2b2b2b",
@@ -784,6 +788,7 @@ table: {
     padding: 18,
     boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
   },
+
   groupCard: {
     border: "1px solid #2b2b2b",
     borderRadius: 16,
@@ -794,6 +799,7 @@ table: {
 
   sectionLabel: { fontWeight: 700, opacity: 0.95, marginBottom: 10 },
   label: { display: "block", marginBottom: 6, opacity: 0.9 },
+
   input: {
     width: "100%",
     padding: "12px 12px",
@@ -803,17 +809,20 @@ table: {
     color: "#fff",
     outline: "none",
   },
+
   formGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: 12,
     marginTop: 14,
   },
+
   serviceGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: 12,
   },
+
   serviceCard: {
     textAlign: "left",
     padding: "14px 14px",
@@ -822,11 +831,13 @@ table: {
     background: "#171717",
     cursor: "pointer",
   },
+
   serviceCardActive: {
     border: "1px solid #27c26b",
     boxShadow: "0 0 0 2px rgba(39, 194, 107, 0.18) inset",
     background: "rgba(39,194,107,0.12)",
   },
+
   serviceTitle: { fontWeight: 900, fontSize: 18 },
   serviceSub: { marginTop: 4, opacity: 0.8 },
 
@@ -836,18 +847,22 @@ table: {
     background: "#141414",
     padding: "10px 12px",
   },
+
   binHeader: {
     display: "flex",
     alignItems: "center",
     gap: 10,
     cursor: "pointer",
   },
+
   checkbox: {
     width: 18,
     height: 18,
     accentColor: "#27c26b",
   },
+
   binName: { fontWeight: 900, fontSize: 18 },
+
   binSettingsRow: {
     marginTop: 10,
     borderTop: "1px solid #252525",
@@ -857,8 +872,10 @@ table: {
     flexWrap: "wrap",
     alignItems: "flex-end",
   },
+
   smallLabel: { fontSize: 12, opacity: 0.85, marginBottom: 6, fontWeight: 700 },
   freqRow: { display: "flex", gap: 10, flexWrap: "wrap" },
+
   pillBtn: {
     padding: "10px 12px",
     borderRadius: 14,
@@ -869,10 +886,12 @@ table: {
     minWidth: 78,
     fontWeight: 800,
   },
+
   pillBtnActive: {
     border: "1px solid rgba(255,255,255,0.7)",
     boxShadow: "0 0 0 2px rgba(255,255,255,0.12) inset",
   },
+
   saveBtn: {
     width: "100%",
     marginTop: 14,
@@ -884,16 +903,7 @@ table: {
     fontWeight: 900,
     cursor: "pointer",
   },
-  tableWrap: {
-  border: "1px solid #2b2b2b",
-  borderRadius: 14,
-  background: "#121212",
 
-  overflowX: "auto",
-  overflowY: "hidden",
-  WebkitOverflowScrolling: "touch",
-},  
-table: { width: "100%", borderCollapse: "collapse", minWidth: 900 },
   th: {
     textAlign: "left",
     padding: "12px 10px",
@@ -901,13 +911,15 @@ table: { width: "100%", borderCollapse: "collapse", minWidth: 900 },
     fontSize: 13,
     opacity: 0.9,
     background: "#101010",
-whiteSpace: "nowrap",
+    whiteSpace: "nowrap",
   },
+
   td: {
     padding: "12px 10px",
     borderBottom: "1px solid #202020",
     verticalAlign: "top",
   },
+
   smallBtn: {
     padding: "8px 10px",
     borderRadius: 10,
@@ -917,10 +929,12 @@ whiteSpace: "nowrap",
     cursor: "pointer",
     marginLeft: 8,
   },
+
   dangerBtn: {
     border: "1px solid #6b1b1b",
     background: "#2a0f0f",
   },
+
   pill: {
     display: "inline-block",
     padding: "4px 10px",
@@ -931,6 +945,7 @@ whiteSpace: "nowrap",
     fontWeight: 900,
     opacity: 0.95,
   },
+
   importBtn: {
     padding: "8px 10px",
     borderRadius: 10,
