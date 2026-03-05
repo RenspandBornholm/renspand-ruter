@@ -444,9 +444,9 @@ export default function KunderPage() {
     if (list.length === 0) return <div style={{ opacity: 0.75, padding: 12 }}>Ingen kunder her endnu.</div>;
 
     return (
-      <div style={styles.tableWrap}>
-        <table style={styles.table}>
-          <thead>
+      <div style={styles.tableOuter}>
+  <div style={styles.tableScroll}>
+    <table style={styles.table}>          <thead>
             <tr>
               <th style={styles.th}>Navn</th>
               <th style={styles.th}>Adresse</th>
@@ -547,6 +547,7 @@ export default function KunderPage() {
           </tbody>
         </table>
       </div>
+</div>
     );
   }
 
@@ -755,6 +756,26 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffb4b4",
     whiteSpace: "pre-wrap",
   },
+tableOuter: {
+  border: "1px solid #2b2b2b",
+  borderRadius: 14,
+  background: "#121212",
+  overflow: "hidden",
+},
+
+tableScroll: {
+  overflowX: "auto",
+  overflowY: "hidden",
+  WebkitOverflowScrolling: "touch",
+  width: "100%",
+  touchAction: "pan-x",
+},
+
+table: {
+  width: "100%",
+  borderCollapse: "collapse",
+  minWidth: 1000,
+},
   card: {
     marginTop: 18,
     border: "1px solid #2b2b2b",
