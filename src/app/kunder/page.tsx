@@ -86,14 +86,12 @@ function parseBofaDatesToYMD(text: string): string[] {
   const out: string[] = [];
 
   for (const l of lines) {
-    // ISO: 2026-03-11
     const iso = l.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
     if (iso) {
       out.push(`${iso[1]}-${iso[2]}-${iso[3]}`);
       continue;
     }
 
-    // Dansk: 11-03-2026 (fra "Onsdag den 11-03-2026")
     const dk = l.match(/\b(\d{1,2})-(\d{1,2})-(\d{4})\b/);
     if (dk) {
       const dd = String(dk[1]).padStart(2, "0");
@@ -110,7 +108,6 @@ function parseBofaDatesToYMD(text: string): string[] {
 export default function KunderPage() {
   const router = useRouter();
 
-  // ✅ Mobil detect (kort-visning på mobil)
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900);
@@ -119,7 +116,6 @@ export default function KunderPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // form basics
   const [serviceType, setServiceType] = useState<ServiceType>("single");
   const [customerType, setCustomerType] = useState<CustomerType>("private");
 
@@ -196,7 +192,6 @@ export default function KunderPage() {
       return;
     }
 
-    // bins
     const { data: bData, error: bErr } = await supabase
       .from("customer_bins")
       .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months")
@@ -216,7 +211,6 @@ export default function KunderPage() {
     }
     setBinsByCustomer(map);
 
-    // ✅ Sidst rengjort pr kunde
     const { data: dData, error: dErr } = await supabase
       .from("route_stops")
       .select("customer_id,done_at,status")
@@ -234,7 +228,6 @@ export default function KunderPage() {
       setLastDoneByCustomer({});
     }
 
-    // ✅ Næste BOFA-dato pr kunde + spand
     const today = new Date();
     const todayYMD = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
       today.getDate()
@@ -536,6 +529,13 @@ export default function KunderPage() {
 
                   <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
                     <button
+                      onClick={() => router.push(`/kunder/${c.id}/historik`)}
+                      style={{ ...styles.smallBtn, marginLeft: 0 }}
+                    >
+                      Historik
+                    </button>
+
+                    <button
                       onClick={() => geocodeCustomer(c)}
                       disabled={!c.address || !c.city}
                       style={{
@@ -631,6 +631,13 @@ export default function KunderPage() {
 
               <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
+                  onClick={() => router.push(`/kunder/${c.id}/historik`)}
+                  style={{ ...styles.smallBtn, marginLeft: 0 }}
+                >
+                  Historik
+                </button>
+
+                <button
                   onClick={() => geocodeCustomer(c)}
                   disabled={!c.address || !c.city}
                   style={{
@@ -671,7 +678,6 @@ export default function KunderPage() {
         <div style={styles.card}>
           <h2 style={styles.h2}>Opret kunde</h2>
 
-          {/* Service */}
           <div style={{ marginTop: 12 }}>
             <div style={styles.sectionLabel}>Vælg service</div>
             <div style={styles.serviceGrid}>
@@ -695,7 +701,6 @@ export default function KunderPage() {
             </div>
           </div>
 
-          {/* Privat/Erhverv */}
           <div style={{ marginTop: 12 }}>
             <div style={styles.sectionLabel}>Kundetype</div>
             <div style={styles.serviceGrid}>
@@ -794,7 +799,6 @@ export default function KunderPage() {
           </button>
         </div>
 
-        {/* Kundeliste */}
         <div style={{ marginTop: 28 }}>
           <h2 style={styles.h2}>Kundeliste</h2>
 
@@ -969,7 +973,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
 
-  // ✅ Desktop table (ingen horizontal scroll på mobil, fordi mobil bruger cards)
   tableWrap: {
     border: "1px solid #2b2b2b",
     borderRadius: 14,
@@ -1028,7 +1031,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
   },
 
-  // ✅ Mobil cards
   mobileCard: {
     border: "1px solid #2b2b2b",
     borderRadius: 16,

@@ -522,6 +522,32 @@ export default function KortPage() {
     setStops((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
+  // ✅ NY: Gem historik for alle kundens spande
+  async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
+    const { data: bins, error: binsErr } = await supabase
+      .from("customer_bins")
+      .select("bin_type")
+      .eq("customer_id", stop.customer_id);
+
+    if (binsErr) throw binsErr;
+
+    const rows = ((bins ?? []) as Array<{ bin_type: string | null }>)
+      .filter((b) => !!b.bin_type)
+      .map((b) => ({
+        customer_id: stop.customer_id,
+        route_stop_id: stop.id,
+        bin_type: b.bin_type as string,
+        status,
+        serviced_at: new Date().toISOString(),
+        note: stop.note ?? null,
+      }));
+
+    if (rows.length === 0) return;
+
+    const { error: histErr } = await supabase.from("service_history").insert(rows);
+    if (histErr) throw histErr;
+  }
+
   async function setStopNote(stopId: string) {
     const current = stops.find((s) => s.id === stopId)?.note ?? "";
     const txt = prompt("Skriv note til dette stop:", current);
@@ -939,7 +965,15 @@ export default function KortPage() {
                     </button>
 
                     <button
-                      onClick={() => updateStop(s.id, { status: "done", done_at: new Date().toISOString() })}
+                      onClick={async () => {
+                        try {
+                          const doneAt = new Date().toISOString();
+                          await updateStop(s.id, { status: "done", done_at: doneAt });
+                          await writeServiceHistory({ ...s, status: "done", done_at: doneAt }, "done");
+                        } catch (e: any) {
+                          setError(String(e?.message ?? e));
+                        }
+                      }}
                       style={{
                         padding: "8px 10px",
                         borderRadius: 12,
@@ -954,7 +988,14 @@ export default function KortPage() {
                     </button>
 
                     <button
-                      onClick={() => updateStop(s.id, { status: "skipped", done_at: null })}
+                      onClick={async () => {
+                        try {
+                          await updateStop(s.id, { status: "skipped", done_at: null });
+                          await writeServiceHistory({ ...s, status: "skipped", done_at: null }, "skipped");
+                        } catch (e: any) {
+                          setError(String(e?.message ?? e));
+                        }
+                      }}
                       style={{
                         padding: "8px 10px",
                         borderRadius: 12,
