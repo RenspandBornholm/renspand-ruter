@@ -7,6 +7,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import { supabase } from "@/lib/supabaseClient";
 import NavTabs from "@/app/components/NavTabs";
+import AppHeader from "@/app/components/AppHeader";
 
 type Customer = {
   id: string;
@@ -701,7 +702,8 @@ export default function KortPage() {
         {mapId || "MISSING"}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+<AppHeader title="RenSpand Ruter" subtitle={`Kort · ${routeDate}`} />      
+<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h1 style={{ fontSize: 44, fontWeight: 900, margin: 0 }}>Kort</h1>
         <button
           onClick={logout}

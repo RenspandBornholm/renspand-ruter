@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import NavTabs from "@/app/components/NavTabs";
+import AppHeader from "@/app/components/AppHeader";
 
 type ServiceType = "single" | "subscription";
 type CustomerType = "private" | "business";
@@ -665,14 +666,16 @@ export default function KunderPage() {
 
   return (
     <div style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom) + 24px)" }}>
-      <div style={styles.page}>
-        <div style={styles.topRow}>
-          <h1 style={styles.h1}>Kunder</h1>
-          <button onClick={logout} style={styles.btn}>
-            Log ud
-          </button>
-        </div>
+  <div style={styles.page}>
 
+    <AppHeader title="RenSpand Ruter" subtitle="Kunder" />
+
+    <div style={styles.topRow}>
+      <h1 style={styles.h1}>Kunder</h1>
+      <button onClick={logout} style={styles.btn}>
+        Log ud
+      </button>
+    </div>
         {error && <div style={styles.error}>{error}</div>}
 
         <div style={styles.card}>
