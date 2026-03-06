@@ -32,6 +32,24 @@ type BinRow = {
   frequency_months: number | null;
 };
 
+type PickupRow = {
+  customer_id: string;
+  bin_type: BinType;
+  pickup_date: string;
+};
+
+type ServiceHistoryRow = {
+  customer_id: string;
+  bin_type: BinType;
+  status: "done" | "skipped";
+  serviced_at: string;
+};
+
+type BinOpportunityInfo = {
+  remainingCount: number;
+  nextDate: string | null;
+};
+
 const BIN_LABEL: Record<BinType, string> = {
   madaffald: "Madaffald",
   rest_plast: "Rest + plast",
@@ -50,6 +68,26 @@ const FREQS: Freq[] = [1, 2, 3, 6];
 
 function formatYMDFromISO(iso: string) {
   return iso.slice(0, 10);
+}
+
+function toYMD(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addDaysYMD(ymd: string, days: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+  dt.setDate(dt.getDate() + days);
+  return toYMD(dt);
+}
+
+function endOfMonthYMD(ymd: string) {
+  const [y, m] = ymd.split("-").map(Number);
+  const dt = new Date(y, m ?? 1, 0);
+  return toYMD(dt);
 }
 
 function daysSince(iso: string) {
@@ -77,6 +115,36 @@ function doneBadgeStyle(days: number) {
   if (days <= 21) return { ...base, border: "1px solid #f1c40f", background: "rgba(241,196,15,0.08)" };
   return { ...base, border: "1px solid #ff4d4f", background: "rgba(255,77,79,0.08)" };
 }
+
+function counterBadgeStyle(count: number): React.CSSProperties {
+  if (count <= 1) {
+    return {
+      border: "1px solid #ff4d4f",
+      background: "rgba(255,77,79,0.10)",
+      color: "#ffd6d6",
+    };
+  }
+
+  if (count === 2) {
+    return {
+      border: "1px solid #f1c40f",
+      background: "rgba(241,196,15,0.10)",
+      color: "#fff0b3",
+    };
+  }
+
+  return {
+    border: "1px solid #2ecc71",
+    background: "rgba(46,204,113,0.10)",
+    color: "#dff7e8",
+  };
+}
+
+const nextDateBadgeStyle: React.CSSProperties = {
+  border: "1px solid #2ecc71",
+  background: "rgba(46,204,113,0.10)",
+  color: "#dff7e8",
+};
 
 function parseBofaDatesToYMD(text: string): string[] {
   const lines = text
@@ -149,6 +217,8 @@ export default function KunderPage() {
   const [binsByCustomer, setBinsByCustomer] = useState<Record<string, BinRow[]>>({});
   const [lastDoneByCustomer, setLastDoneByCustomer] = useState<Record<string, string | null>>({});
   const [nextPickupByCustomerBin, setNextPickupByCustomerBin] = useState<Record<string, string | null>>({});
+  const [binOpportunityByCustomerBin, setBinOpportunityByCustomerBin] = useState<Record<string, BinOpportunityInfo>>({});
+  const [doneThisCycleByCustomerBin, setDoneThisCycleByCustomerBin] = useState<Record<string, boolean>>({});
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -172,6 +242,12 @@ export default function KunderPage() {
   async function loadCustomers() {
     setError(null);
 
+    const todayYMD = toYMD(new Date());
+    const monthStart = `${todayYMD.slice(0, 7)}-01`;
+    const monthEnd = endOfMonthYMD(todayYMD);
+    const pickupWindowStart = addDaysYMD(monthStart, -1);
+    const pickupWindowEnd = addDaysYMD(monthEnd, -1);
+
     const { data: cData, error: cErr } = await supabase
       .from("customers")
       .select("id,name,address,city,lat,lng,service_type,customer_type,created_at")
@@ -190,6 +266,8 @@ export default function KunderPage() {
       setBinsByCustomer({});
       setLastDoneByCustomer({});
       setNextPickupByCustomerBin({});
+      setBinOpportunityByCustomerBin({});
+      setDoneThisCycleByCustomerBin({});
       return;
     }
 
@@ -203,6 +281,8 @@ export default function KunderPage() {
       setBinsByCustomer({});
       setLastDoneByCustomer({});
       setNextPickupByCustomerBin({});
+      setBinOpportunityByCustomerBin({});
+      setDoneThisCycleByCustomerBin({});
       return;
     }
 
@@ -229,11 +309,6 @@ export default function KunderPage() {
       setLastDoneByCustomer({});
     }
 
-    const today = new Date();
-    const todayYMD = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
-      today.getDate()
-    ).padStart(2, "0")}`;
-
     const { data: pData, error: pErr } = await supabase
       .from("bofa_pickups")
       .select("customer_id,bin_type,pickup_date")
@@ -251,6 +326,77 @@ export default function KunderPage() {
     } else {
       setNextPickupByCustomerBin({});
     }
+
+    const { data: monthPickupData, error: monthPickupErr } = await supabase
+      .from("bofa_pickups")
+      .select("customer_id,bin_type,pickup_date")
+      .in("customer_id", ids)
+      .gte("pickup_date", pickupWindowStart)
+      .lte("pickup_date", pickupWindowEnd)
+      .order("pickup_date", { ascending: true });
+
+    if (monthPickupErr) {
+      setBinOpportunityByCustomerBin({});
+      setDoneThisCycleByCustomerBin({});
+      return;
+    }
+
+    const pickupRows = (monthPickupData ?? []) as PickupRow[];
+
+    const groupedPickups: Record<string, string[]> = {};
+    for (const row of pickupRows) {
+      const key = `${row.customer_id}__${row.bin_type}`;
+      const cleaningDate = addDaysYMD(row.pickup_date, 1);
+
+      if (!cleaningDate.startsWith(todayYMD.slice(0, 7))) continue;
+
+      (groupedPickups[key] ||= []).push(cleaningDate);
+    }
+
+    const opportunityMap: Record<string, BinOpportunityInfo> = {};
+    for (const [key, cleaningDatesRaw] of Object.entries(groupedPickups)) {
+      const cleaningDates = Array.from(new Set(cleaningDatesRaw)).sort();
+      const remainingCount = cleaningDates.filter((d) => d >= todayYMD).length;
+      const nextDate = cleaningDates.find((d) => d > todayYMD) ?? null;
+
+      opportunityMap[key] = {
+        remainingCount,
+        nextDate,
+      };
+    }
+    setBinOpportunityByCustomerBin(opportunityMap);
+
+    const { data: historyData, error: historyErr } = await supabase
+      .from("service_history")
+      .select("customer_id,bin_type,status,serviced_at")
+      .in("customer_id", ids)
+      .eq("status", "done")
+      .gte("serviced_at", `${monthStart}T00:00:00`)
+      .lte("serviced_at", `${monthEnd}T23:59:59`)
+      .order("serviced_at", { ascending: false });
+
+    if (historyErr) {
+      setDoneThisCycleByCustomerBin({});
+      return;
+    }
+
+    const historyRows = (historyData ?? []) as ServiceHistoryRow[];
+    const doneCycleMap: Record<string, boolean> = {};
+
+    for (const row of historyRows) {
+      const key = `${row.customer_id}__${row.bin_type}`;
+      if (doneCycleMap[key]) continue;
+
+      const servicedDate = formatYMDFromISO(row.serviced_at);
+      const info = opportunityMap[key];
+      if (!info) continue;
+
+      if (servicedDate <= todayYMD) {
+        doneCycleMap[key] = true;
+      }
+    }
+
+    setDoneThisCycleByCustomerBin(doneCycleMap);
   }
 
   useEffect(() => {
@@ -443,6 +589,46 @@ export default function KunderPage() {
     };
   }, [customers]);
 
+  function renderBinStatus(customerId: string, binType: BinType) {
+    const key = `${customerId}__${binType}`;
+    const info = binOpportunityByCustomerBin[key];
+    const isDone = doneThisCycleByCustomerBin[key];
+
+    if (isDone) {
+      return (
+        <span
+          style={{
+            display: "inline-block",
+            padding: "4px 10px",
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 900,
+            ...nextDateBadgeStyle,
+          }}
+        >
+          {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
+        </span>
+      );
+    }
+
+    if (!info?.remainingCount) return null;
+
+    return (
+      <span
+        style={{
+          display: "inline-block",
+          padding: "4px 10px",
+          borderRadius: 999,
+          fontSize: 12,
+          fontWeight: 900,
+          ...counterBadgeStyle(info.remainingCount),
+        }}
+      >
+        {info.remainingCount} forsøg tilbage
+      </span>
+    );
+  }
+
   function renderTable(list: CustomerRow[]) {
     if (list.length === 0) return <div style={{ opacity: 0.75, padding: 12 }}>Ingen kunder her endnu.</div>;
 
@@ -494,8 +680,7 @@ export default function KunderPage() {
                     {bins.length ? (
                       <div style={{ display: "grid", gap: 10 }}>
                         {bins.map((b) => {
-                          const key = `${c.id}__${b.bin_type}`;
-                          const next = nextPickupByCustomerBin[key] ?? null;
+                          const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
 
                           return (
                             <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -507,9 +692,10 @@ export default function KunderPage() {
                                   · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
                                 </span>
 
-                                <div style={{ marginTop: 6 }}>
+                                <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  {renderBinStatus(c.id, b.bin_type)}
                                   {next ? (
-                                    <span style={styles.pill}>Næste: {next}</span>
+                                    <span style={styles.pill}>BOFA næste: {next}</span>
                                   ) : (
                                     <span style={{ fontSize: 12, opacity: 0.65 }}>Ingen datoer</span>
                                   )}
@@ -603,8 +789,7 @@ export default function KunderPage() {
                 {bins.length ? (
                   <div style={{ display: "grid", gap: 10 }}>
                     {bins.map((b) => {
-                      const key = `${c.id}__${b.bin_type}`;
-                      const next = nextPickupByCustomerBin[key] ?? null;
+                      const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
 
                       return (
                         <div key={b.id} style={styles.binLine}>
@@ -614,8 +799,10 @@ export default function KunderPage() {
                             </div>
                             <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
                               {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}{" "}
-                              {next ? `· Næste: ${next}` : "· Ingen datoer"}
+                              {next ? `· BOFA næste: ${next}` : "· Ingen datoer"}
                             </div>
+
+                            <div style={{ marginTop: 6 }}>{renderBinStatus(c.id, b.bin_type)}</div>
                           </div>
 
                           <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
@@ -666,16 +853,16 @@ export default function KunderPage() {
 
   return (
     <div style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom) + 24px)" }}>
-  <div style={styles.page}>
+      <div style={styles.page}>
+        <AppHeader title="RenSpand Ruter" subtitle="Kunder" />
 
-    <AppHeader title="RenSpand Ruter" subtitle="Kunder" />
+        <div style={styles.topRow}>
+          <h1 style={styles.h1}>Kunder</h1>
+          <button onClick={logout} style={styles.btn}>
+            Log ud
+          </button>
+        </div>
 
-    <div style={styles.topRow}>
-      <h1 style={styles.h1}>Kunder</h1>
-      <button onClick={logout} style={styles.btn}>
-        Log ud
-      </button>
-    </div>
         {error && <div style={styles.error}>{error}</div>}
 
         <div style={styles.card}>
