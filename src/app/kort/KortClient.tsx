@@ -60,6 +60,12 @@ function toYMD(d: Date) {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+function addDaysYMD(ymd: string, days: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+  dt.setDate(dt.getDate() + days);
+  return toYMD(dt);
+}
 
 // (I beholder jeres week-group helpers — bruges ikke i foreslå længere, men kan være nyttige senere)
 function isoWeekNumber(date: Date) {
@@ -595,15 +601,18 @@ export default function KortPage() {
       setError(null);
       const rd = routeDay ?? (await loadOrCreateRouteDay(routeDate));
 
-      const dateYMD =
-        routeDate.split("-")[0]?.length === 4
-          ? routeDate
-          : routeDate.split("-").reverse().join("-");
+      const selectedDateYMD =
+  routeDate.split("-")[0]?.length === 4
+    ? routeDate
+    : routeDate.split("-").reverse().join("-");
+
+// ✅ Vi rengør dagen EFTER BOFA har tømt
+const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
 
       const { data: dateRows, error: dErr } = await supabase
-        .from("bofa_pickups")
-        .select("customer_id,bin_type,pickup_date")
-        .eq("pickup_date", dateYMD);
+  .from("bofa_pickups")
+  .select("customer_id,bin_type,pickup_date")
+  .eq("pickup_date", pickupDateYMD);
 
       if (dErr) throw dErr;
 
@@ -611,7 +620,7 @@ export default function KortPage() {
 
       if (rows.length === 0) {
         setTodayBinsByCustomer({});
-        setError(`Ingen BOFA-datoer matcher ${routeDate}. (Har du importeret for kunderne?)`);
+        setError(`Rolig dag – ingen spande klar til rengøring (${pickupDateYMD}) for rutedato ${selectedDateYMD}.`);
         return;
       }
 
@@ -755,7 +764,7 @@ export default function KortPage() {
             fontWeight: 900,
           }}
         >
-          {adding ? "Foreslår…" : "Foreslå kunder i dag"}
+          {adding ? "Finder…" : "Spande klar til rengøring"}
         </button>
 
         <button

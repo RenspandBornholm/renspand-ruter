@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import NavTabs from "@/app/components/NavTabs";
+import AppHeader from "@/app/components/AppHeader";
 
 type BinType = "madaffald" | "rest_plast" | "pap_papir" | "metal_glas";
 
@@ -152,6 +153,7 @@ export default function KundeHistorikPage() {
   return (
     <div style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom) + 24px)" }}>
       <div style={styles.page}>
+<AppHeader title="RenSpand Ruter" subtitle="Kundehistorik" />
         <div style={styles.topRow}>
           <div>
             <h1 style={styles.h1}>Historik</h1>
