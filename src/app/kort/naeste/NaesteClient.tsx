@@ -163,7 +163,33 @@ export default function NaestePage() {
     // start på første "planned"
     const firstPlanned = withCustomers.findIndex((s) => s.status === "planned");
     setIdx(firstPlanned >= 0 ? firstPlanned : 0);
-  } // ✅ VIGTIG: lukker loadRouteForDate
+  }
+
+  // ✅ NY: Gem historik for alle kundens spande
+  async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
+    const { data: bins, error: binsErr } = await supabase
+      .from("customer_bins")
+      .select("bin_type")
+      .eq("customer_id", stop.customer_id);
+
+    if (binsErr) throw binsErr;
+
+    const rows = ((bins ?? []) as Array<{ bin_type: string | null }>)
+      .filter((b) => !!b.bin_type)
+      .map((b) => ({
+        customer_id: stop.customer_id,
+        route_stop_id: stop.id,
+        bin_type: b.bin_type as string,
+        status,
+        serviced_at: new Date().toISOString(),
+        note: stop.note ?? null,
+      }));
+
+    if (rows.length === 0) return;
+
+    const { error: histErr } = await supabase.from("service_history").insert(rows);
+    if (histErr) throw histErr;
+  }
 
   // Load data når dato ændrer sig
   useEffect(() => {
@@ -220,12 +246,24 @@ export default function NaestePage() {
       setError(null);
 
       if (status === "done") {
+        const doneAt = new Date().toISOString();
+
         await updateStop(current.id, {
           status: "done",
-          done_at: new Date().toISOString(),
+          done_at: doneAt,
         });
+
+        await writeServiceHistory(
+          { ...current, status: "done", done_at: doneAt },
+          "done"
+        );
       } else {
         await updateStop(current.id, { status: "skipped", done_at: null });
+
+        await writeServiceHistory(
+          { ...current, status: "skipped", done_at: null },
+          "skipped"
+        );
       }
 
       const nextPlanned = findNextPlannedIndex(idx);
