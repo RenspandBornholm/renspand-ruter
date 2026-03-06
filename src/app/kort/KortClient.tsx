@@ -44,6 +44,17 @@ type BinRow = {
   frequency_months: number | null;
 };
 
+type PickupRow = {
+  customer_id: string;
+  bin_type: string;
+  pickup_date: string;
+};
+
+type BinOpportunityInfo = {
+  remainingCount: number;
+  nextDate: string | null;
+};
+
 const DK_WEEKDAYS: Array<{ label: string; value: string; jsDay: number }> = [
   { label: "Søn", value: "Søn", jsDay: 0 },
   { label: "Man", value: "Man", jsDay: 1 },
@@ -60,12 +71,49 @@ function toYMD(d: Date) {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
 function addDaysYMD(ymd: string, days: number) {
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
   dt.setDate(dt.getDate() + days);
   return toYMD(dt);
 }
+
+function endOfMonthYMD(ymd: string) {
+  const [y, m] = ymd.split("-").map(Number);
+  const dt = new Date(y, m ?? 1, 0);
+  return toYMD(dt);
+}
+
+function counterBadgeStyle(count: number): React.CSSProperties {
+  if (count <= 1) {
+    return {
+      border: "1px solid #ff4d4f",
+      background: "rgba(255,77,79,0.10)",
+      color: "#ffd6d6",
+    };
+  }
+
+  if (count === 2) {
+    return {
+      border: "1px solid #f1c40f",
+      background: "rgba(241,196,15,0.10)",
+      color: "#fff0b3",
+    };
+  }
+
+  return {
+    border: "1px solid #2ecc71",
+    background: "rgba(46,204,113,0.10)",
+    color: "#dff7e8",
+  };
+}
+
+const nextDateBadgeStyle: React.CSSProperties = {
+  border: "1px solid #2ecc71",
+  background: "rgba(46,204,113,0.10)",
+  color: "#dff7e8",
+};
 
 // (I beholder jeres week-group helpers — bruges ikke i foreslå længere, men kan være nyttige senere)
 function isoWeekNumber(date: Date) {
@@ -162,7 +210,6 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
     return;
   }
 
-  // HQ koordinater
   const HQ = "55.10692093390334,14.822756898314669";
   const endAtHQ = false;
 
@@ -197,7 +244,6 @@ export default function KortPage() {
   const [routeDay, setRouteDay] = useState<RouteDay | null>(null);
   const [stops, setStops] = useState<RouteStop[]>([]);
 
-  // Hold URL i sync med valgt dato
   useEffect(() => {
     const sp = new URLSearchParams(searchParams.toString());
     sp.set("date", routeDate);
@@ -209,8 +255,13 @@ export default function KortPage() {
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
 
-  // ✅ “I dag” bin-types pr kunde (fra BOFA-datoer)
+  // ✅ Spande klar til denne rutedato (fra gårsdagens BOFA)
   const [todayBinsByCustomer, setTodayBinsByCustomer] = useState<Record<string, string[]>>({});
+
+  // ✅ Forsøg / næste dato pr kunde+bin
+  const [binOpportunityByCustomerBin, setBinOpportunityByCustomerBin] = useState<
+    Record<string, BinOpportunityInfo>
+  >({});
 
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -222,7 +273,6 @@ export default function KortPage() {
 
   const [mapsReady, setMapsReady] = useState(false);
 
-  // gm_authFailure (Google afviser key)
   useEffect(() => {
     (window as any).gm_authFailure = () => {
       setError("Google afviste API key (gm_authFailure). Tjek restrictions/billing/API'er i Google Cloud.");
@@ -301,6 +351,69 @@ export default function KortPage() {
     setStops(withCustomers);
   }
 
+  async function loadBinOpportunityData(dateYMD: string, customerIds: string[]) {
+    if (!customerIds.length) {
+      setTodayBinsByCustomer({});
+      setBinOpportunityByCustomerBin({});
+      return;
+    }
+
+    const uniqueCustomerIds = Array.from(new Set(customerIds));
+    const monthStart = `${dateYMD.slice(0, 7)}-01`;
+    const monthEnd = endOfMonthYMD(dateYMD);
+
+    const pickupDateForToday = addDaysYMD(dateYMD, -1);
+    const pickupWindowStart = addDaysYMD(monthStart, -1);
+    const pickupWindowEnd = addDaysYMD(monthEnd, -1);
+
+    const { data, error } = await supabase
+      .from("bofa_pickups")
+      .select("customer_id,bin_type,pickup_date")
+      .in("customer_id", uniqueCustomerIds)
+      .gte("pickup_date", pickupWindowStart)
+      .lte("pickup_date", pickupWindowEnd)
+      .order("pickup_date", { ascending: true });
+
+    if (error) throw error;
+
+    const rows = (data ?? []) as PickupRow[];
+
+    const todayMap: Record<string, string[]> = {};
+    const grouped: Record<string, string[]> = {};
+
+    for (const row of rows) {
+      const key = `${row.customer_id}__${row.bin_type}`;
+      const cleaningDate = addDaysYMD(row.pickup_date, 1);
+
+      if (!cleaningDate.startsWith(dateYMD.slice(0, 7))) continue;
+
+      (grouped[key] ||= []).push(cleaningDate);
+
+      if (row.pickup_date === pickupDateForToday) {
+        (todayMap[row.customer_id] ||= []);
+        if (!todayMap[row.customer_id].includes(row.bin_type)) {
+          todayMap[row.customer_id].push(row.bin_type);
+        }
+      }
+    }
+
+    const infoMap: Record<string, BinOpportunityInfo> = {};
+    for (const [key, cleaningDatesRaw] of Object.entries(grouped)) {
+      const cleaningDates = Array.from(new Set(cleaningDatesRaw)).sort();
+
+      const remainingCount = cleaningDates.filter((d) => d >= dateYMD).length;
+      const nextDate = cleaningDates.find((d) => d > dateYMD) ?? null;
+
+      infoMap[key] = {
+        remainingCount,
+        nextDate,
+      };
+    }
+
+    setTodayBinsByCustomer(todayMap);
+    setBinOpportunityByCustomerBin(infoMap);
+  }
+
   useEffect(() => {
     (async () => {
       try {
@@ -323,9 +436,6 @@ export default function KortPage() {
         if (allCustomers.length === 0) return;
         const rd = await loadOrCreateRouteDay(routeDate);
         await loadStops(rd.id);
-
-        // ✅ når dato skifter: ryd “i dag”-badges (de opdateres når man trykker foreslå)
-        setTodayBinsByCustomer({});
       } catch (e: any) {
         setError(String(e?.message ?? e));
       }
@@ -333,7 +443,17 @@ export default function KortPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeDate, allCustomers.length]);
 
-  // Init map NÅR maps er ready (stabilt)
+  useEffect(() => {
+    (async () => {
+      try {
+        const ids = Array.from(new Set(stops.map((s) => s.customer_id).filter(Boolean)));
+        await loadBinOpportunityData(routeDate, ids);
+      } catch (e: any) {
+        setError(String(e?.message ?? e));
+      }
+    })();
+  }, [routeDate, stops]);
+
   useEffect(() => {
     if (!mapsReady) return;
     if (!mapDivRef.current) return;
@@ -355,19 +475,16 @@ export default function KortPage() {
     }
   }, [mapsReady, mapId]);
 
-  // Render markers (inkl HQ) når stops ændrer sig
   useEffect(() => {
     const g = (window as any).google as typeof google | undefined;
     const map = mapRef.current;
     if (!g?.maps || !map) return;
 
-    // ryd gamle
     for (const m of markersRef.current) m.setMap(null);
     markersRef.current = [];
 
     const bounds = new g.maps.LatLngBounds();
 
-    // HQ marker (altid)
     const HQ_POS = { lat: 55.10692093390334, lng: 14.822756898314669 };
 
     const hqMarker = new g.maps.Marker({
@@ -404,15 +521,45 @@ export default function KortPage() {
         const todayHtml = todayBins.length
           ? `
             <div style="margin-top:10px;">
-              <div style="font-weight:900;margin-bottom:6px;">I dag (${routeDate})</div>
+              <div style="font-weight:900;margin-bottom:6px;">Klar til rengøring (${routeDate})</div>
               ${todayBins
-                .map(
-                  (bt) => `
-                <div style="border:1px solid #e6e6e6;border-radius:10px;padding:7px 10px;margin-top:6px;">
-                  <div style="font-weight:900;">${binIconShort(bt)} ${binLabelShort(bt)}</div>
-                </div>
-              `
-                )
+                .map((bt) => {
+                  const key = `${c.id}__${bt}`;
+                  const info = binOpportunityByCustomerBin[key];
+
+                  let counterHtml = "";
+                  if (s.status === "done") {
+                    counterHtml = info?.nextDate
+                      ? `<div style="margin-top:6px;font-size:12px;font-weight:900;color:#15803d;">Næste: ${info.nextDate}</div>`
+                      : `<div style="margin-top:6px;font-size:12px;font-weight:900;color:#15803d;">Færdig for måneden</div>`;
+                  } else if (info?.remainingCount) {
+                    const bg =
+                      info.remainingCount <= 1
+                        ? "rgba(255,77,79,0.10)"
+                        : info.remainingCount === 2
+                        ? "rgba(241,196,15,0.10)"
+                        : "rgba(46,204,113,0.10)";
+                    const border =
+                      info.remainingCount <= 1 ? "#ff4d4f" : info.remainingCount === 2 ? "#f1c40f" : "#2ecc71";
+                    const color =
+                      info.remainingCount <= 1 ? "#b91c1c" : info.remainingCount === 2 ? "#a16207" : "#15803d";
+
+                    counterHtml = `
+                      <div style="margin-top:6px;">
+                        <span style="display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid ${border};background:${bg};font-size:12px;font-weight:900;color:${color};">
+                          ${info.remainingCount} forsøg tilbage
+                        </span>
+                      </div>
+                    `;
+                  }
+
+                  return `
+                    <div style="border:1px solid #e6e6e6;border-radius:10px;padding:7px 10px;margin-top:6px;">
+                      <div style="font-weight:900;">${binIconShort(bt)} ${binLabelShort(bt)}</div>
+                      ${counterHtml}
+                    </div>
+                  `;
+                })
                 .join("")}
             </div>
           `
@@ -497,7 +644,7 @@ export default function KortPage() {
     }
 
     if (markersRef.current.length > 0) map.fitBounds(bounds, 60);
-  }, [stops, todayBinsByCustomer, routeDate]);
+  }, [stops, todayBinsByCustomer, binOpportunityByCustomerBin, routeDate]);
 
   async function addCustomerToRoute(customerId: string) {
     if (!routeDay) return;
@@ -529,7 +676,6 @@ export default function KortPage() {
     setStops((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
-  // ✅ NY: Gem historik for alle kundens spande
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
     const { data: bins, error: binsErr } = await supabase
       .from("customer_bins")
@@ -595,24 +741,22 @@ export default function KortPage() {
     );
   }
 
-  // ✅ SMART foreslå: brug BOFA-datoer fra bofa_pickups
   async function suggestCustomersForDate() {
     try {
       setError(null);
       const rd = routeDay ?? (await loadOrCreateRouteDay(routeDate));
 
       const selectedDateYMD =
-  routeDate.split("-")[0]?.length === 4
-    ? routeDate
-    : routeDate.split("-").reverse().join("-");
+        routeDate.split("-")[0]?.length === 4
+          ? routeDate
+          : routeDate.split("-").reverse().join("-");
 
-// ✅ Vi rengør dagen EFTER BOFA har tømt
-const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
+      const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
 
       const { data: dateRows, error: dErr } = await supabase
-  .from("bofa_pickups")
-  .select("customer_id,bin_type,pickup_date")
-  .eq("pickup_date", pickupDateYMD);
+        .from("bofa_pickups")
+        .select("customer_id,bin_type,pickup_date")
+        .eq("pickup_date", pickupDateYMD);
 
       if (dErr) throw dErr;
 
@@ -624,7 +768,6 @@ const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
         return;
       }
 
-      // Gruppér hvilke bin_types der er i dag pr kunde
       const binsMap: Record<string, string[]> = {};
       for (const r of rows) {
         (binsMap[r.customer_id] ||= []);
@@ -635,7 +778,6 @@ const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
       const eligibleIds = Object.keys(binsMap);
       setAdding(true);
 
-      // FIX: lokal tæller til order_index
       let nextIndex = stops.length;
 
       for (const cid of eligibleIds) {
@@ -687,12 +829,10 @@ const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
     ? `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`
     : "";
 
-  // ✅ Til bundmenu: giv luft i bunden så den ikke dækker indhold på mobil
   const BOTTOM_NAV_H = 76;
 
   return (
     <div style={{ padding: 24, color: "#ddd", paddingBottom: 24 + BOTTOM_NAV_H }}>
-      {/* Google Maps Script (stabil) */}
       {apiKey ? (
         <Script
           src={scriptSrc}
@@ -705,14 +845,14 @@ const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
         />
       ) : null}
 
-      {/* Mini debug */}
       <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
         mapsReady: {mapsReady ? "YES" : "NO"} • apiKey: {apiKey ? apiKey.slice(0, 6) + "..." : "MISSING"} • mapId:{" "}
         {mapId || "MISSING"}
       </div>
 
-<AppHeader title="RenSpand Ruter" subtitle={`Kort · ${routeDate}`} />      
-<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <AppHeader title="RenSpand Ruter" subtitle={`Kort · ${routeDate}`} />
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h1 style={{ fontSize: 44, fontWeight: 900, margin: 0 }}>Kort</h1>
         <button
           onClick={logout}
@@ -863,7 +1003,6 @@ const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
         </div>
       </div>
 
-      {/* ✅ Mere mobilvenlig grid: auto-fit -> 1 kolonne på små skærme */}
       <div
         style={{
           marginTop: 18,
@@ -932,24 +1071,64 @@ const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
                     {!c?.lat || !c?.lng ? " • (mangler koordinater)" : ""}
                   </div>
 
-                  {/* ✅ I dag badges */}
                   {todays.length ? (
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {todays.map((bt) => (
-                        <span
-                          key={bt}
-                          style={{
-                            padding: "5px 10px",
-                            borderRadius: 999,
-                            border: "1px solid #333",
-                            background: "#111",
-                            fontSize: 12,
-                            fontWeight: 900,
-                          }}
-                        >
-                          {binIconShort(bt)} {binLabelShort(bt)}
-                        </span>
-                      ))}
+                      {todays.map((bt) => {
+                        const key = `${s.customer_id}__${bt}`;
+                        const info = binOpportunityByCustomerBin[key];
+
+                        return (
+                          <div
+                            key={bt}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 6,
+                            }}
+                          >
+                            <span
+                              style={{
+                                padding: "5px 10px",
+                                borderRadius: 999,
+                                border: "1px solid #333",
+                                background: "#111",
+                                fontSize: 12,
+                                fontWeight: 900,
+                              }}
+                            >
+                              {binIconShort(bt)} {binLabelShort(bt)}
+                            </span>
+
+                            {s.status === "done" ? (
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "5px 10px",
+                                  borderRadius: 999,
+                                  fontSize: 12,
+                                  fontWeight: 900,
+                                  ...nextDateBadgeStyle,
+                                }}
+                              >
+                                {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
+                              </span>
+                            ) : info?.remainingCount ? (
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "5px 10px",
+                                  borderRadius: 999,
+                                  fontSize: 12,
+                                  fontWeight: 900,
+                                  ...counterBadgeStyle(info.remainingCount),
+                                }}
+                              >
+                                {info.remainingCount} forsøg tilbage
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
 
@@ -1070,7 +1249,6 @@ const pickupDateYMD = addDaysYMD(selectedDateYMD, -1);
         </div>
       </div>
 
-      {/* ✅ Bundmenu: Kort / Kunder */}
       <NavTabs />
     </div>
   );
