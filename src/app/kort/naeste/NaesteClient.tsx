@@ -43,6 +43,10 @@ function customerAddr(c?: Customer | null) {
   return `${c.address ?? ""}${c.city ? ", " + c.city : ""}`.trim();
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Åbner Google Maps i samme "app/tab".
  * - Har koordinater: navigation fra HQ -> kunden
@@ -89,6 +93,9 @@ export default function NaestePage() {
   const [stops, setStops] = useState<RouteStop[]>([]);
   const [idx, setIdx] = useState(0);
 
+  // ✅ NYT: success overlay når man trykker Rengjort
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
+
   // Auth check
   useEffect(() => {
     (async () => {
@@ -98,7 +105,6 @@ export default function NaestePage() {
   }, [router]);
 
   async function loadRouteForDate(dateStr: string) {
-    // 1) Find route day for dato
     const { data: rd, error: rdErr } = await supabase
       .from("route_days")
       .select("id,route_date")
@@ -117,7 +123,6 @@ export default function NaestePage() {
     const rdTyped = rd as RouteDay;
     setRouteDay(rdTyped);
 
-    // 2) Hent stops
     const { data: sRows, error: sErr } = await supabase
       .from("route_stops")
       .select("id,route_day_id,customer_id,order_index,status,done_at,note")
@@ -133,7 +138,6 @@ export default function NaestePage() {
       return;
     }
 
-    // 3) Hent KUN kunder på ruten
     const ids = Array.from(
       new Set(stopsRaw.map((s) => s.customer_id).filter(Boolean))
     );
@@ -149,10 +153,8 @@ export default function NaestePage() {
       cRows = (data ?? []) as Customer[];
     }
 
-    // Map: customerId -> Customer
     const cMap = new Map<string, Customer>(cRows.map((c) => [c.id, c]));
 
-    // Merge stops + customer
     const withCustomers: RouteStop[] = stopsRaw.map((s) => ({
       ...s,
       customer: cMap.get(s.customer_id),
@@ -160,12 +162,10 @@ export default function NaestePage() {
 
     setStops(withCustomers);
 
-    // start på første "planned"
     const firstPlanned = withCustomers.findIndex((s) => s.status === "planned");
     setIdx(firstPlanned >= 0 ? firstPlanned : 0);
   }
 
-  // ✅ NY: Gem historik for alle kundens spande
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
     const { data: bins, error: binsErr } = await supabase
       .from("customer_bins")
@@ -191,7 +191,6 @@ export default function NaestePage() {
     if (histErr) throw histErr;
   }
 
-  // Load data når dato ændrer sig
   useEffect(() => {
     (async () => {
       try {
@@ -257,6 +256,11 @@ export default function NaestePage() {
           { ...current, status: "done", done_at: doneAt },
           "done"
         );
+
+        // ✅ Vis RenSpand overlay kort før næste kunde åbnes
+        setShowSuccessOverlay(true);
+        await sleep(1200);
+        setShowSuccessOverlay(false);
       } else {
         await updateStop(current.id, { status: "skipped", done_at: null });
 
@@ -275,6 +279,7 @@ export default function NaestePage() {
         if (c) openGoogleMapsToCustomer(c);
       }
     } catch (e: any) {
+      setShowSuccessOverlay(false);
       setError(String(e?.message ?? e));
     }
   }
@@ -282,7 +287,91 @@ export default function NaestePage() {
   if (loading) return <div style={{ padding: 24, color: "#ddd" }}>Indlæser…</div>;
 
   return (
-    <div style={{ padding: 18, color: "#eee", maxWidth: 780, margin: "0 auto" }}>
+    <div style={{ padding: 18, color: "#eee", maxWidth: 780, margin: "0 auto", position: "relative" }}>
+      {showSuccessOverlay && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(6px)",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: "min(92vw, 360px)",
+              borderRadius: 24,
+              border: "1px solid #2a2a2a",
+              background: "linear-gradient(180deg, rgba(18,18,18,0.98), rgba(10,10,10,0.98))",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
+              padding: "28px 22px",
+              textAlign: "center",
+            }}
+          >
+            <img
+              src="/apple-touch-icon.png"
+              alt="RenSpand logo"
+              style={{
+                width: 88,
+                height: 88,
+                objectFit: "cover",
+                borderRadius: 22,
+                border: "1px solid #2a2a2a",
+                background: "#fff",
+              }}
+            />
+
+            <div
+              style={{
+                width: 78,
+                height: 78,
+                margin: "18px auto 0",
+                borderRadius: 999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(46,204,113,0.14)",
+                border: "2px solid #2ecc71",
+                color: "#2ecc71",
+                fontSize: 42,
+                fontWeight: 900,
+                lineHeight: 1,
+              }}
+            >
+              ✓
+            </div>
+
+            <div
+              style={{
+                marginTop: 16,
+                fontSize: 28,
+                fontWeight: 900,
+                color: "#fff",
+                letterSpacing: 0.2,
+              }}
+            >
+              Rengjort
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 14,
+                color: "#dff7e8",
+                opacity: 0.9,
+              }}
+            >
+              RenSpand Bornholm
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div>
           <div style={{ fontSize: 26, fontWeight: 900 }}>Næste stop</div>
@@ -311,7 +400,7 @@ export default function NaestePage() {
 
       {!routeDay ? (
         <div style={{ marginTop: 18, opacity: 0.85 }}>
-          Ingen rute fundet for datoen. Gå til <b>/kort</b> og tryk “Foreslå kunder i dag”.
+          Ingen rute fundet for datoen. Gå til <b>/kort</b> og tryk “Spande klar til rengøring”.
         </div>
       ) : sortedStops.length === 0 ? (
         <div style={{ marginTop: 18, opacity: 0.85 }}>Ruten har 0 stop.</div>
