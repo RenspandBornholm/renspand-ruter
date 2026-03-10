@@ -838,10 +838,15 @@ export default function KortPage() {
           src={scriptSrc}
           strategy="afterInteractive"
           onLoad={() => {
-            if ((window as any).google?.maps) setMapsReady(true);
-            else setError("Google script loaded, men google.maps mangler (adblock eller noget blokerer).");
-          }}
-          onError={() => setError("Kunne ikke loade Google Maps script (netværk/adblock).")}
+  setTimeout(() => {
+    if ((window as any).google?.maps) {
+      setMapsReady(true);
+      setError(null);
+    } else {
+      setError("Google script loaded, men google.maps mangler.");
+    }
+  }, 300);
+}}          onError={() => setError("Kunne ikke loade Google Maps script (netværk/adblock).")}
         />
       ) : null}
 
