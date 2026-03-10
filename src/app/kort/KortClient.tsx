@@ -219,10 +219,7 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
     : `${usable[usable.length - 1].lat},${usable[usable.length - 1].lng}`;
 
   const waypointPoints = endAtHQ ? usable : usable.slice(0, -1);
-  const waypoints = waypointPoints.length
-  ? `optimize:true|${waypointPoints.map((p) => `${p.lat},${p.lng}`).join("|")}`
-  : "";
-
+  const waypoints = waypointPoints.map((p) => `${p.lat},${p.lng}`).join("|");
   const url =
     `https://www.google.com/maps/dir/?api=1` +
     `&origin=${encodeURIComponent(origin)}` +
