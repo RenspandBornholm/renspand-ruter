@@ -63,16 +63,6 @@ type UpcomingRouteRow = {
   plannedCount: number;
 };
 
-const DK_WEEKDAYS: Array<{ label: string; value: string; jsDay: number }> = [
-  { label: "Søn", value: "Søn", jsDay: 0 },
-  { label: "Man", value: "Man", jsDay: 1 },
-  { label: "Tir", value: "Tir", jsDay: 2 },
-  { label: "Ons", value: "Ons", jsDay: 3 },
-  { label: "Tor", value: "Tor", jsDay: 4 },
-  { label: "Fre", value: "Fre", jsDay: 5 },
-  { label: "Lør", value: "Lør", jsDay: 6 },
-];
-
 function toYMD(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -128,40 +118,6 @@ const nextDateBadgeStyle: React.CSSProperties = {
   background: "rgba(46,204,113,0.10)",
   color: "#dff7e8",
 };
-
-function isoWeekNumber(date: Date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return weekNo;
-}
-
-function computeWeekGroup(date: Date) {
-  const w = isoWeekNumber(date);
-  const parity = w % 2 === 0 ? "lige" : "ulige";
-  const abc = ["A", "B", "C"][(w - 1) % 3];
-  return { week: w, parity, abc };
-}
-
-function matchesWeekGroup(rule: string | null | undefined, date: Date) {
-  if (!rule || rule === "" || rule === "alle" || rule === "ingen") return true;
-
-  const r = rule.trim().toLowerCase();
-  const { parity, abc } = computeWeekGroup(date);
-
-  if (r === "lige" || r === "lige uger") return parity === "lige";
-  if (r === "ulige" || r === "ulige uger") return parity === "ulige";
-
-  if (r === "a" || r === "b" || r === "c") return abc.toLowerCase() === r;
-
-  if (r.includes("c")) return abc === "C";
-  if (r.includes("b")) return abc === "B";
-  if (r.includes("a")) return abc === "A";
-
-  return true;
-}
 
 function binTypeLabel(t: string | null) {
   switch ((t ?? "").toLowerCase()) {
@@ -369,6 +325,7 @@ export default function KortPage() {
   const [routeDay, setRouteDay] = useState<RouteDay | null>(null);
   const [stops, setStops] = useState<RouteStop[]>([]);
   const [upcomingRoutes, setUpcomingRoutes] = useState<UpcomingRouteRow[]>([]);
+  const [upcomingBaseDate, setUpcomingBaseDate] = useState<string>(initialDate);
 
   useEffect(() => {
     const sp = new URLSearchParams(searchParams.toString());
@@ -504,7 +461,7 @@ export default function KortPage() {
     const dayRows = (routeDays ?? []) as Array<{ id: string; route_date: string }>;
     const dayIds = dayRows.map((d) => d.id);
 
-    let stopsByDayId: Record<string, RouteStop["status"][]> = {};
+    const stopsByDayId: Record<string, RouteStop["status"][]> = {};
 
     if (dayIds.length > 0) {
       const { data: stopRows, error: rsErr } = await supabase
@@ -619,7 +576,7 @@ export default function KortPage() {
     }
 
     setStops(normalized);
-    await loadUpcomingRoutes(routeDate);
+    await loadUpcomingRoutes(upcomingBaseDate);
   }
 
   async function reindexCurrentStops(nextStops: RouteStop[]) {
@@ -655,13 +612,23 @@ export default function KortPage() {
         if (allCustomers.length === 0) return;
         const rd = await loadOrCreateRouteDay(routeDate);
         await loadStops(rd.id);
-        await loadUpcomingRoutes(routeDate);
       } catch (e: any) {
         setError(String(e?.message ?? e));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeDate, allCustomers.length]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (allCustomers.length === 0) return;
+        await loadUpcomingRoutes(upcomingBaseDate);
+      } catch (e: any) {
+        setError(String(e?.message ?? e));
+      }
+    })();
+  }, [upcomingBaseDate, allCustomers.length]);
 
   useEffect(() => {
     (async () => {
@@ -863,7 +830,12 @@ export default function KortPage() {
       markersRef.current.push(marker);
     }
 
-    if (markersRef.current.length > 0) map.fitBounds(bounds, 60);
+    if (markersRef.current.length > 0) {
+      map.fitBounds(bounds, 60);
+    } else {
+      map.setCenter(HQ_POS);
+      map.setZoom(12);
+    }
   }, [stops, todayBinsByCustomer, binOpportunityByCustomerBin, routeDate]);
 
   async function addCustomerToRoute(customerId: string) {
@@ -895,14 +867,14 @@ export default function KortPage() {
       },
     ]);
 
-    await loadUpcomingRoutes(routeDate);
+    await loadUpcomingRoutes(upcomingBaseDate);
   }
 
   async function updateStop(id: string, patch: Partial<RouteStop>) {
     const { error } = await supabase.from("route_stops").update(patch).eq("id", id);
     if (error) throw error;
     setStops((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-    await loadUpcomingRoutes(routeDate);
+    await loadUpcomingRoutes(upcomingBaseDate);
   }
 
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
@@ -1102,7 +1074,7 @@ export default function KortPage() {
       }
 
       if (addedAny) {
-        await loadUpcomingRoutes(routeDate);
+        await loadUpcomingRoutes(upcomingBaseDate);
       }
     } catch (e: any) {
       setError(String(e?.message ?? e));
@@ -1132,6 +1104,9 @@ export default function KortPage() {
     ? `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`
     : "";
 
+  const todayYMD = toYMD(new Date());
+  const tomorrowYMD = addDaysYMD(todayYMD, 1);
+
   const BOTTOM_NAV_H = 76;
 
   return (
@@ -1153,11 +1128,6 @@ export default function KortPage() {
           onError={() => setError("Kunne ikke loade Google Maps script (netværk/adblock).")}
         />
       ) : null}
-
-      <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
-        mapsReady: {mapsReady ? "YES" : "NO"} • apiKey: {apiKey ? apiKey.slice(0, 6) + "..." : "MISSING"} • mapId:{" "}
-        {mapId || "MISSING"}
-      </div>
 
       <AppHeader title="RenSpand Ruter" subtitle={`Kort · ${routeDate}`} />
 
@@ -1583,8 +1553,50 @@ export default function KortPage() {
           padding: 14,
         }}
       >
-        <div style={{ fontWeight: 900, fontSize: 18 }}>Kommende ruter</div>
-        <div style={{ marginTop: 6, opacity: 0.8 }}>Næste 7 dage fra valgt dato</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>Kommende ruter</div>
+            <div style={{ marginTop: 6, opacity: 0.8 }}>Næste 7 dage fra valgt oversigt</div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => setUpcomingBaseDate((prev) => addDaysYMD(prev, -1))}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: "#111",
+                border: "1px solid #333",
+                color: "#fff",
+                cursor: "pointer",
+                fontWeight: 900,
+                minWidth: 44,
+              }}
+              aria-label="Vis tidligere dage"
+              title="Vis tidligere dage"
+            >
+              ←
+            </button>
+
+            <button
+              onClick={() => setUpcomingBaseDate((prev) => addDaysYMD(prev, 1))}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: "#111",
+                border: "1px solid #333",
+                color: "#fff",
+                cursor: "pointer",
+                fontWeight: 900,
+                minWidth: 44,
+              }}
+              aria-label="Vis senere dage"
+              title="Vis senere dage"
+            >
+              →
+            </button>
+          </div>
+        </div>
 
         <div
           style={{
@@ -1611,9 +1623,9 @@ export default function KortPage() {
                 }}
               >
                 <div style={{ fontSize: 15, fontWeight: 900 }}>
-                  {row.date === toYMD(new Date())
+                  {row.date === todayYMD
                     ? `I dag · ${toDMY(row.date)}`
-                    : row.date === addDaysYMD(toYMD(new Date()), 1)
+                    : row.date === tomorrowYMD
                     ? `I morgen · ${toDMY(row.date)}`
                     : `Rute · ${toDMY(row.date)}`}
                 </div>
