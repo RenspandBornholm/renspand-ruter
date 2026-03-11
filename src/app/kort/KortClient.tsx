@@ -55,6 +55,14 @@ type BinOpportunityInfo = {
   nextDate: string | null;
 };
 
+type UpcomingRouteRow = {
+  date: string;
+  stopCount: number;
+  doneCount: number;
+  skippedCount: number;
+  plannedCount: number;
+};
+
 const DK_WEEKDAYS: Array<{ label: string; value: string; jsDay: number }> = [
   { label: "Søn", value: "Søn", jsDay: 0 },
   { label: "Man", value: "Man", jsDay: 1 },
@@ -70,6 +78,12 @@ function toYMD(d: Date) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function toDMY(ymd: string) {
+  const [y, m, d] = ymd.split("-");
+  if (!y || !m || !d) return ymd;
+  return `${d}-${m}-${y}`;
 }
 
 function addDaysYMD(ymd: string, days: number) {
@@ -302,6 +316,46 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function upcomingRouteStyle(row: UpcomingRouteRow, isActive: boolean): React.CSSProperties {
+  if (isActive) {
+    return {
+      border: "1px solid #4ea1ff",
+      background: "rgba(78,161,255,0.12)",
+      color: "#dbeeff",
+    };
+  }
+
+  if (row.stopCount === 0) {
+    return {
+      border: "1px solid #444",
+      background: "#111",
+      color: "#cfcfcf",
+    };
+  }
+
+  if (row.doneCount === row.stopCount) {
+    return {
+      border: "1px solid #2ecc71",
+      background: "rgba(46,204,113,0.10)",
+      color: "#dff7e8",
+    };
+  }
+
+  if (row.doneCount > 0 || row.skippedCount > 0) {
+    return {
+      border: "1px solid #f1c40f",
+      background: "rgba(241,196,15,0.10)",
+      color: "#fff0b3",
+    };
+  }
+
+  return {
+    border: "1px solid #4ea1ff",
+    background: "rgba(78,161,255,0.08)",
+    color: "#dbeeff",
+  };
+}
+
 export default function KortPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -314,6 +368,7 @@ export default function KortPage() {
   const [routeDate, setRouteDate] = useState<string>(initialDate);
   const [routeDay, setRouteDay] = useState<RouteDay | null>(null);
   const [stops, setStops] = useState<RouteStop[]>([]);
+  const [upcomingRoutes, setUpcomingRoutes] = useState<UpcomingRouteRow[]>([]);
 
   useEffect(() => {
     const sp = new URLSearchParams(searchParams.toString());
@@ -431,6 +486,60 @@ export default function KortPage() {
     setStops(withCustomers);
   }
 
+  async function loadUpcomingRoutes(baseDateYMD: string) {
+    const dates = Array.from({ length: 7 }, (_, i) => addDaysYMD(baseDateYMD, i));
+
+    const fromDate = dates[0];
+    const toDate = dates[dates.length - 1];
+
+    const { data: routeDays, error: rdErr } = await supabase
+      .from("route_days")
+      .select("id,route_date")
+      .gte("route_date", fromDate)
+      .lte("route_date", toDate)
+      .order("route_date", { ascending: true });
+
+    if (rdErr) throw rdErr;
+
+    const dayRows = (routeDays ?? []) as Array<{ id: string; route_date: string }>;
+    const dayIds = dayRows.map((d) => d.id);
+
+    let stopsByDayId: Record<string, RouteStop["status"][]> = {};
+
+    if (dayIds.length > 0) {
+      const { data: stopRows, error: rsErr } = await supabase
+        .from("route_stops")
+        .select("route_day_id,status")
+        .in("route_day_id", dayIds);
+
+      if (rsErr) throw rsErr;
+
+      for (const row of (stopRows ?? []) as Array<{ route_day_id: string; status: RouteStop["status"] }>) {
+        (stopsByDayId[row.route_day_id] ||= []).push(row.status);
+      }
+    }
+
+    const rows: UpcomingRouteRow[] = dates.map((date) => {
+      const day = dayRows.find((d) => d.route_date === date);
+      const statuses = day ? stopsByDayId[day.id] ?? [] : [];
+
+      const stopCount = statuses.length;
+      const doneCount = statuses.filter((s) => s === "done").length;
+      const skippedCount = statuses.filter((s) => s === "skipped").length;
+      const plannedCount = statuses.filter((s) => s === "planned").length;
+
+      return {
+        date,
+        stopCount,
+        doneCount,
+        skippedCount,
+        plannedCount,
+      };
+    });
+
+    setUpcomingRoutes(rows);
+  }
+
   async function loadBinOpportunityData(dateYMD: string, customerIds: string[]) {
     if (!customerIds.length) {
       setTodayBinsByCustomer({});
@@ -510,6 +619,7 @@ export default function KortPage() {
     }
 
     setStops(normalized);
+    await loadUpcomingRoutes(routeDate);
   }
 
   async function reindexCurrentStops(nextStops: RouteStop[]) {
@@ -545,6 +655,7 @@ export default function KortPage() {
         if (allCustomers.length === 0) return;
         const rd = await loadOrCreateRouteDay(routeDate);
         await loadStops(rd.id);
+        await loadUpcomingRoutes(routeDate);
       } catch (e: any) {
         setError(String(e?.message ?? e));
       }
@@ -783,12 +894,15 @@ export default function KortPage() {
         customer,
       },
     ]);
+
+    await loadUpcomingRoutes(routeDate);
   }
 
   async function updateStop(id: string, patch: Partial<RouteStop>) {
     const { error } = await supabase.from("route_stops").update(patch).eq("id", id);
     if (error) throw error;
     setStops((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+    await loadUpcomingRoutes(routeDate);
   }
 
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
@@ -962,6 +1076,7 @@ export default function KortPage() {
       setAdding(true);
 
       let nextIndex = stops.length;
+      let addedAny = false;
 
       for (const cid of eligibleIds) {
         if (!stops.some((s) => s.customer_id === cid)) {
@@ -982,7 +1097,12 @@ export default function KortPage() {
           setStops((prev) => [...prev, { ...(inserted as RouteStop), customer }]);
 
           nextIndex += 1;
+          addedAny = true;
         }
+      }
+
+      if (addedAny) {
+        await loadUpcomingRoutes(routeDate);
       }
     } catch (e: any) {
       setError(String(e?.message ?? e));
@@ -1451,6 +1571,69 @@ export default function KortPage() {
               background: "#111",
             }}
           />
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 18,
+          background: "#0d0d0d",
+          border: "1px solid #222",
+          borderRadius: 16,
+          padding: 14,
+        }}
+      >
+        <div style={{ fontWeight: 900, fontSize: 18 }}>Kommende ruter</div>
+        <div style={{ marginTop: 6, opacity: 0.8 }}>Næste 7 dage fra valgt dato</div>
+
+        <div
+          style={{
+            marginTop: 12,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 10,
+          }}
+        >
+          {upcomingRoutes.map((row) => {
+            const isActive = row.date === routeDate;
+
+            return (
+              <button
+                key={row.date}
+                onClick={() => setRouteDate(row.date)}
+                style={{
+                  textAlign: "left",
+                  borderRadius: 14,
+                  padding: 12,
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  ...upcomingRouteStyle(row, isActive),
+                }}
+              >
+                <div style={{ fontSize: 15, fontWeight: 900 }}>
+                  {row.date === toYMD(new Date())
+                    ? `I dag · ${toDMY(row.date)}`
+                    : row.date === addDaysYMD(toYMD(new Date()), 1)
+                    ? `I morgen · ${toDMY(row.date)}`
+                    : `Rute · ${toDMY(row.date)}`}
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 13, opacity: 0.95 }}>
+                  {row.stopCount} stop
+                </div>
+
+                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
+                  {row.stopCount === 0
+                    ? "Ingen planlagt rute endnu"
+                    : row.doneCount === row.stopCount
+                    ? "Alle stop er færdige"
+                    : row.doneCount > 0 || row.skippedCount > 0
+                    ? `${row.doneCount} rengjort • ${row.skippedCount} ikke muligt • ${row.plannedCount} planlagt`
+                    : "Planlagt rute"}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
