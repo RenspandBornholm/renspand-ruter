@@ -1086,7 +1086,6 @@ const [planMessage, setPlanMessage] = useState<string | null>(null);
 async function suggestCustomersForDate() {
   try {
   } catch (e:any) {
-     ...
   } finally {
      setAdding(false)
   }
