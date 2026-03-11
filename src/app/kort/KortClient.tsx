@@ -210,6 +210,17 @@ function routeDistanceKm(route: RouteStop[], hq: { lat: number; lng: number }) {
       route[i + 1].customer!.lng!
     );
   }
+function estimateDriveMinutes(distanceKmTotal: number) {
+  const averageSpeedKmH = 45; // realistisk nok til Bornholm blandet by/land
+  return Math.round((distanceKmTotal / averageSpeedKmH) * 60);
+}
+
+function formatDriveTime(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h} t` : `${h} t ${m} min`;
+}
 
   total += distanceKm(
     route[route.length - 1].customer!.lat!,
@@ -368,14 +379,42 @@ const [planMessage, setPlanMessage] = useState<string | null>(null);
   }, []);
 
   const selectedPoints = useMemo(() => {
-    const pts: { lat: number; lng: number; label?: string }[] = [];
-    for (const s of [...stops].sort((a, b) => a.order_index - b.order_index)) {
-      const c = s.customer;
-      if (c?.lat != null && c?.lng != null) pts.push({ lat: c.lat, lng: c.lng, label: c.name });
-    }
-    return pts;
-  }, [stops]);
+  const pts: { lat: number; lng: number; label?: string }[] = [];
+  for (const s of [...stops].sort((a, b) => a.order_index - b.order_index)) {
+    const c = s.customer;
+    if (c?.lat != null && c?.lng != null) pts.push({ lat: c.lat, lng: c.lng, label: c.name });
+  }
+  return pts;
+}, [stops]);
 
+const routeStats = useMemo(() => {
+  const HQ = {
+    lat: 55.10692093390334,
+    lng: 14.822756898314669,
+  };
+
+  const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
+
+  const stopsWithCoords = sortedStops.filter(
+    (s) =>
+      s.customer?.lat != null &&
+      s.customer?.lng != null &&
+      Number.isFinite(s.customer.lat) &&
+      Number.isFinite(s.customer.lng)
+  );
+
+  const totalKm = routeDistanceKm(stopsWithCoords, HQ);
+  const driveMinutes = estimateDriveMinutes(totalKm);
+
+  return {
+    stopCount: sortedStops.length,
+    routedStopCount: stopsWithCoords.length,
+    totalKm,
+    driveMinutes,
+  };
+}, [stops]);
+
+useEffect(() => {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -1328,7 +1367,40 @@ async function planDay() {
       >
         <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
           <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
-          <div style={{ marginTop: 6, opacity: 0.8 }}>{sortedStops.length} stop</div>
+
+<div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+  <div style={{ opacity: 0.9 }}>
+    {routeStats.stopCount} stop
+  </div>
+
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <span
+      style={{
+        padding: "6px 10px",
+        borderRadius: 999,
+        border: "1px solid #333",
+        background: "#111",
+        fontSize: 12,
+        fontWeight: 900,
+      }}
+    >
+      🚛 {routeStats.totalKm.toFixed(1)} km
+    </span>
+
+    <span
+      style={{
+        padding: "6px 10px",
+        borderRadius: 999,
+        border: "1px solid #333",
+        background: "#111",
+        fontSize: 12,
+        fontWeight: 900,
+      }}
+    >
+      ⏱️ ca. {formatDriveTime(routeStats.driveMinutes)}
+    </span>
+  </div>
+</div>
 
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
             {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
