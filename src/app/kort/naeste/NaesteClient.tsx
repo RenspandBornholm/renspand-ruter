@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -28,6 +28,7 @@ type RouteStop = {
   status: "planned" | "done" | "skipped";
   done_at: string | null;
   note: string | null;
+  note_image_path: string | null;
   customer?: Customer;
 };
 
@@ -80,6 +81,12 @@ function openGoogleMapsToCustomer(c: Customer) {
   window.location.href = url;
 }
 
+function getPublicImageUrl(path: string | null | undefined) {
+  if (!path) return null;
+  const { data } = supabase.storage.from("route-notes").getPublicUrl(path);
+  return data.publicUrl;
+}
+
 export default function NaestePage() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -93,8 +100,15 @@ export default function NaestePage() {
   const [stops, setStops] = useState<RouteStop[]>([]);
   const [idx, setIdx] = useState(0);
 
-  // ✅ NYT: success overlay når man trykker Rengjort
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
+
+  const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteFile, setNoteFile] = useState<File | null>(null);
+  const [notePreviewUrl, setNotePreviewUrl] = useState<string | null>(null);
+  const [savingNote, setSavingNote] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Auth check
   useEffect(() => {
@@ -125,7 +139,7 @@ export default function NaestePage() {
 
     const { data: sRows, error: sErr } = await supabase
       .from("route_stops")
-      .select("id,route_day_id,customer_id,order_index,status,done_at,note")
+      .select("id,route_day_id,customer_id,order_index,status,done_at,note,note_image_path")
       .eq("route_day_id", rdTyped.id)
       .order("order_index", { ascending: true });
 
@@ -213,6 +227,11 @@ export default function NaestePage() {
 
   const current = sortedStops[idx] ?? null;
 
+  const currentImageUrl = useMemo(
+    () => getPublicImageUrl(current?.note_image_path),
+    [current?.note_image_path]
+  );
+
   const plannedCount = useMemo(
     () => sortedStops.filter((s) => s.status === "planned").length,
     [sortedStops]
@@ -229,6 +248,32 @@ export default function NaestePage() {
     if (i >= 0) setIdx(i);
   }
 
+  function resetNoteEditor() {
+    setIsNoteEditorOpen(false);
+    setNoteDraft("");
+    setNoteFile(null);
+    setNotePreviewUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function openNoteEditor() {
+    if (!current) return;
+    setNoteDraft(current.note ?? "");
+    setNoteFile(null);
+    setNotePreviewUrl(getPublicImageUrl(current.note_image_path));
+    setIsNoteEditorOpen(true);
+  }
+
+  function onSelectNoteFile(file: File | null) {
+    setNoteFile(file);
+    if (!file) {
+      setNotePreviewUrl(current ? getPublicImageUrl(current.note_image_path) : null);
+      return;
+    }
+    const localUrl = URL.createObjectURL(file);
+    setNotePreviewUrl(localUrl);
+  }
+
   async function updateStop(stopId: string, patch: Partial<RouteStop>) {
     const { error } = await supabase.from("route_stops").update(patch).eq("id", stopId);
     if (error) throw error;
@@ -236,6 +281,73 @@ export default function NaestePage() {
     setStops((prev) =>
       prev.map((s) => (s.id === stopId ? ({ ...s, ...patch } as RouteStop) : s))
     );
+  }
+
+  async function uploadNoteImage(stop: RouteStop, file: File) {
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const safeExt = ext.replace(/[^a-z0-9]/g, "") || "jpg";
+    const filePath = `${routeDate}/${stop.id}-${Date.now()}.${safeExt}`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from("route-notes")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: file.type || "image/jpeg",
+      });
+
+    if (uploadErr) throw uploadErr;
+    return filePath;
+  }
+
+  async function saveNoteAndImage() {
+    if (!current) return;
+
+    try {
+      setError(null);
+      setSavingNote(true);
+
+      let nextImagePath = current.note_image_path;
+
+      if (noteFile) {
+        nextImagePath = await uploadNoteImage(current, noteFile);
+      }
+
+      await updateStop(current.id, {
+        note: noteDraft.trim() || null,
+        note_image_path: nextImagePath ?? null,
+      });
+
+      resetNoteEditor();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setSavingNote(false);
+    }
+  }
+
+  async function removeNoteImageOnly() {
+    if (!current) return;
+
+    try {
+      setError(null);
+      setSavingNote(true);
+
+      if (current.note_image_path) {
+        await supabase.storage.from("route-notes").remove([current.note_image_path]);
+      }
+
+      await updateStop(current.id, {
+        note_image_path: null,
+      });
+
+      setNoteFile(null);
+      setNotePreviewUrl(null);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setSavingNote(false);
+    }
   }
 
   async function markAndGo(status: "done" | "skipped") {
@@ -257,7 +369,6 @@ export default function NaestePage() {
           "done"
         );
 
-        // ✅ Vis RenSpand overlay kort før næste kunde åbnes
         setShowSuccessOverlay(true);
         await sleep(1200);
         setShowSuccessOverlay(false);
@@ -400,7 +511,7 @@ export default function NaestePage() {
 
       {!routeDay ? (
         <div style={{ marginTop: 18, opacity: 0.85 }}>
-          Ingen rute fundet for datoen. Gå til <b>/kort</b> og tryk “Spande klar til rengøring”.
+          Ingen rute fundet for datoen. Gå til <b>/kort</b> og tryk “Planlæg dagen”.
         </div>
       ) : sortedStops.length === 0 ? (
         <div style={{ marginTop: 18, opacity: 0.85 }}>Ruten har 0 stop.</div>
@@ -425,6 +536,22 @@ export default function NaestePage() {
               {current.note ? (
                 <div style={{ marginTop: 8, opacity: 0.95 }}>
                   <b>Note:</b> {current.note}
+                </div>
+              ) : null}
+
+              {currentImageUrl ? (
+                <div style={{ marginTop: 10 }}>
+                  <img
+                    src={currentImageUrl}
+                    alt="Stop dokumentation"
+                    style={{
+                      width: "100%",
+                      maxWidth: 320,
+                      borderRadius: 14,
+                      border: "1px solid #333",
+                      display: "block",
+                    }}
+                  />
                 </div>
               ) : null}
             </div>
@@ -498,17 +625,7 @@ export default function NaestePage() {
             </button>
 
             <button
-              onClick={async () => {
-                const currentNote = current.note ?? "";
-                const txt = prompt("Skriv note:", currentNote);
-                if (txt === null) return;
-                try {
-                  setError(null);
-                  await updateStop(current.id, { note: txt });
-                } catch (e: any) {
-                  setError(String(e?.message ?? e));
-                }
-              }}
+              onClick={openNoteEditor}
               style={{
                 padding: "10px 12px",
                 borderRadius: 12,
@@ -519,7 +636,7 @@ export default function NaestePage() {
                 fontWeight: 900,
               }}
             >
-              Note
+              Note + billede
             </button>
 
             <div style={{ flex: 1 }} />
@@ -558,6 +675,131 @@ export default function NaestePage() {
               Næste →
             </button>
           </div>
+
+          {isNoteEditorOpen && (
+            <div
+              style={{
+                marginTop: 14,
+                border: "1px solid #2a2a2a",
+                borderRadius: 16,
+                background: "#111",
+                padding: 12,
+              }}
+            >
+              <div style={{ fontWeight: 900, marginBottom: 10 }}>Dokumentér skade / note</div>
+
+              <textarea
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                placeholder="Skriv note, fx: låg revnet før rengøring..."
+                rows={4}
+                style={{
+                  width: "100%",
+                  resize: "vertical",
+                  padding: 12,
+                  borderRadius: 12,
+                  border: "1px solid #333",
+                  background: "#0d0d0d",
+                  color: "#fff",
+                  outline: "none",
+                }}
+              />
+
+              <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => onSelectNoteFile(e.target.files?.[0] ?? null)}
+                  style={{ display: "none" }}
+                />
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #3a3a3a",
+                    background: "#151515",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  Tilføj / tag billede
+                </button>
+
+                {(current.note_image_path || noteFile) && (
+                  <button
+                    onClick={removeNoteImageOnly}
+                    disabled={savingNote}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      border: "1px solid #ff4d4f",
+                      background: "#2a0a0a",
+                      color: "#ffd6d6",
+                      cursor: savingNote ? "not-allowed" : "pointer",
+                      fontWeight: 900,
+                    }}
+                  >
+                    Fjern billede
+                  </button>
+                )}
+              </div>
+
+              {notePreviewUrl ? (
+                <div style={{ marginTop: 12 }}>
+                  <img
+                    src={notePreviewUrl}
+                    alt="Forhåndsvisning"
+                    style={{
+                      width: "100%",
+                      maxWidth: 360,
+                      borderRadius: 14,
+                      border: "1px solid #333",
+                      display: "block",
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={saveNoteAndImage}
+                  disabled={savingNote}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #2ecc71",
+                    background: "#0f2a1b",
+                    color: "#dff7e8",
+                    cursor: savingNote ? "not-allowed" : "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  {savingNote ? "Gemmer..." : "Gem note + billede"}
+                </button>
+
+                <button
+                  onClick={resetNoteEditor}
+                  disabled={savingNote}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #333",
+                    background: "#101010",
+                    color: "#fff",
+                    cursor: savingNote ? "not-allowed" : "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  Annuller
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 12, opacity: 0.75, fontSize: 12 }}>
             Tip: Åbn denne side fra <b>/kort</b> så datoen følger med: <b>/kort/naeste?date=YYYY-MM-DD</b>
