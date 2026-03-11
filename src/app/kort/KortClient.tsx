@@ -210,17 +210,6 @@ function routeDistanceKm(route: RouteStop[], hq: { lat: number; lng: number }) {
       route[i + 1].customer!.lng!
     );
   }
-function estimateDriveMinutes(distanceKmTotal: number) {
-  const averageSpeedKmH = 45; // realistisk nok til Bornholm blandet by/land
-  return Math.round((distanceKmTotal / averageSpeedKmH) * 60);
-}
-
-function formatDriveTime(minutes: number) {
-  if (minutes < 60) return `${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 ? `${h} t` : `${h} t ${m} min`;
-}
 
   total += distanceKm(
     route[route.length - 1].customer!.lat!,
@@ -230,6 +219,18 @@ function formatDriveTime(minutes: number) {
   );
 
   return total;
+}
+
+function estimateDriveMinutes(distanceKmTotal: number) {
+  const averageSpeedKmH = 45;
+  return Math.round((distanceKmTotal / averageSpeedKmH) * 60);
+}
+
+function formatDriveTime(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h} t` : `${h} t ${m} min`;
 }
 
 function twoOpt(route: RouteStop[], hq: { lat: number; lng: number }) {
@@ -268,7 +269,6 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
   }
 
   const HQ = "55.10692093390334,14.822756898314669";
-
   const origin = HQ;
   const destination = HQ;
 
@@ -329,7 +329,7 @@ export default function KortPage() {
   const pathname = usePathname();
 
   const [loading, setLoading] = useState(true);
-const [planMessage, setPlanMessage] = useState<string | null>(null);
+  const [planMessage, setPlanMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const initialDate = searchParams.get("date") || toYMD(new Date());
@@ -379,42 +379,41 @@ const [planMessage, setPlanMessage] = useState<string | null>(null);
   }, []);
 
   const selectedPoints = useMemo(() => {
-  const pts: { lat: number; lng: number; label?: string }[] = [];
-  for (const s of [...stops].sort((a, b) => a.order_index - b.order_index)) {
-    const c = s.customer;
-    if (c?.lat != null && c?.lng != null) pts.push({ lat: c.lat, lng: c.lng, label: c.name });
-  }
-  return pts;
-}, [stops]);
+    const pts: { lat: number; lng: number; label?: string }[] = [];
+    for (const s of [...stops].sort((a, b) => a.order_index - b.order_index)) {
+      const c = s.customer;
+      if (c?.lat != null && c?.lng != null) pts.push({ lat: c.lat, lng: c.lng, label: c.name });
+    }
+    return pts;
+  }, [stops]);
 
-const routeStats = useMemo(() => {
-  const HQ = {
-    lat: 55.10692093390334,
-    lng: 14.822756898314669,
-  };
+  const routeStats = useMemo(() => {
+    const HQ = {
+      lat: 55.10692093390334,
+      lng: 14.822756898314669,
+    };
 
-  const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
+    const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
 
-  const stopsWithCoords = sortedStops.filter(
-    (s) =>
-      s.customer?.lat != null &&
-      s.customer?.lng != null &&
-      Number.isFinite(s.customer.lat) &&
-      Number.isFinite(s.customer.lng)
-  );
+    const stopsWithCoords = sortedStops.filter(
+      (s) =>
+        s.customer?.lat != null &&
+        s.customer?.lng != null &&
+        Number.isFinite(s.customer.lat) &&
+        Number.isFinite(s.customer.lng)
+    );
 
-  const totalKm = routeDistanceKm(stopsWithCoords, HQ);
-  const driveMinutes = estimateDriveMinutes(totalKm);
+    const totalKm = routeDistanceKm(stopsWithCoords, HQ);
+    const driveMinutes = estimateDriveMinutes(totalKm);
 
-  return {
-    stopCount: sortedStops.length,
-    routedStopCount: stopsWithCoords.length,
-    totalKm,
-    driveMinutes,
-  };
-}, [stops]);
+    return {
+      stopCount: sortedStops.length,
+      routedStopCount: stopsWithCoords.length,
+      totalKm,
+      driveMinutes,
+    };
+  }, [stops]);
 
-useEffect(() => {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -711,7 +710,6 @@ useEffect(() => {
     markersRef.current = [];
 
     const bounds = new g.maps.LatLngBounds();
-
     const HQ_POS = { lat: 55.10692093390334, lng: 14.822756898314669 };
 
     const hqMarker = new g.maps.Marker({
@@ -899,14 +897,7 @@ useEffect(() => {
     if (error) throw error;
 
     const customer = allCustomers.find((c) => c.id === customerId);
-    setStops((prev) => [
-      ...prev,
-      {
-        ...(data as RouteStop),
-        customer,
-      },
-    ]);
-
+    setStops((prev) => [...prev, { ...(data as RouteStop), customer }]);
     await loadUpcomingRoutes(upcomingBaseDate);
   }
 
@@ -1123,37 +1114,36 @@ useEffect(() => {
     }
   }
 
-async function planDay() {
-  try {
-    setError(null)
-    setPlanMessage(null)
-    setAdding(true)
+  async function planDay() {
+    try {
+      setError(null);
+      setPlanMessage(null);
+      setAdding(true);
 
-    const beforeCount = stops.length
+      const beforeCount = stops.length;
 
-    await suggestCustomersForDate()
-    await new Promise(r => setTimeout(r,150))
-    await optimizeRoute()
+      await suggestCustomersForDate();
+      await new Promise((r) => setTimeout(r, 150));
+      await optimizeRoute();
 
-    const afterCount = stops.length
-    const added = Math.max(0, afterCount - beforeCount)
+      const afterCount = stops.length;
+      const added = Math.max(0, afterCount - beforeCount);
 
-    setPlanMessage(
-      added > 0
-        ? `Rute planlagt • ${added} stop tilføjet • rute optimeret`
-        : "Rute planlagt • ingen nye stop • rute optimeret"
-    )
+      setPlanMessage(
+        added > 0
+          ? `Rute planlagt • ${added} stop tilføjet • rute optimeret`
+          : "Rute planlagt • ingen nye stop • rute optimeret"
+      );
 
-    setTimeout(() => {
-      setPlanMessage(null)
-    }, 3500)
-
-  } catch (e:any) {
-    setError(String(e?.message ?? e))
-  } finally {
-    setAdding(false)
+      setTimeout(() => {
+        setPlanMessage(null);
+      }, 3500);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setAdding(false);
+    }
   }
-}
 
   const filteredCustomers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1178,7 +1168,6 @@ async function planDay() {
 
   const todayYMD = toYMD(new Date());
   const tomorrowYMD = addDaysYMD(todayYMD, 1);
-
   const BOTTOM_NAV_H = 76;
 
   return (
@@ -1223,6 +1212,23 @@ async function planDay() {
 
       {error && <div style={{ marginTop: 10, color: "#ff6b6b", fontWeight: 800 }}>{error}</div>}
 
+      {planMessage && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px 14px",
+            borderRadius: 14,
+            border: "1px solid #2ecc71",
+            background: "rgba(46,204,113,0.10)",
+            color: "#dff7e8",
+            fontWeight: 800,
+            fontSize: 14,
+          }}
+        >
+          {planMessage}
+        </div>
+      )}
+
       <div style={{ marginTop: 14, display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontWeight: 800 }}>Dato:</span>
@@ -1243,55 +1249,58 @@ async function planDay() {
         </label>
 
         <button
-  onClick={planDay}
-  disabled={adding || optimizing}
-  style={{
-    padding: "12px 16px",
-    borderRadius: 14,
-    background: adding || optimizing ? "#1d2a22" : "#1f8f52",
-    border: "1px solid #2ecc71",
-    color: "#f3fff8",
-    cursor: adding || optimizing ? "not-allowed" : "pointer",
-    fontWeight: 900,
-    fontSize: 14,
-    minHeight: 46,
-  }}
->
-  {adding || optimizing ? "Planlægger…" : "Planlæg dagen"}
-</button>
-  <button
-  onClick={() => openGoogleMapsRoute(selectedPoints)}
-  disabled={selectedPoints.length < 1}
-  style={{
-    padding: "12px 16px",
-    borderRadius: 14,
-    background: selectedPoints.length < 1 ? "#161616" : "#151515",
-    border: "1px solid #3a3a3a",
-    color: "#fff",
-    cursor: selectedPoints.length < 1 ? "not-allowed" : "pointer",
-    fontWeight: 900,
-    fontSize: 14,
-    minHeight: 46,
-  }}
->
-  Åbn rute (fra HQ)
-</button>
+          onClick={planDay}
+          disabled={adding || optimizing}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 14,
+            background: adding || optimizing ? "#1d2a22" : "#1f8f52",
+            border: "1px solid #2ecc71",
+            color: "#f3fff8",
+            cursor: adding || optimizing ? "not-allowed" : "pointer",
+            fontWeight: 900,
+            fontSize: 14,
+            minHeight: 46,
+          }}
+        >
+          {adding || optimizing ? "Planlægger…" : "Planlæg dagen"}
+        </button>
+
         <button
-  onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
-  style={{
-    padding: "12px 16px",
-    borderRadius: 14,
-    background: "#151515",
-    border: "1px solid #3a3a3a",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 14,
-    minHeight: 46,
-  }}
->
-  Næste stop (app)
-</button>
+          onClick={() => openGoogleMapsRoute(selectedPoints)}
+          disabled={selectedPoints.length < 1}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 14,
+            background: selectedPoints.length < 1 ? "#161616" : "#151515",
+            border: "1px solid #3a3a3a",
+            color: "#fff",
+            cursor: selectedPoints.length < 1 ? "not-allowed" : "pointer",
+            fontWeight: 900,
+            fontSize: 14,
+            minHeight: 46,
+          }}
+        >
+          Åbn rute (fra HQ)
+        </button>
+
+        <button
+          onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 14,
+            background: "#151515",
+            border: "1px solid #3a3a3a",
+            color: "#fff",
+            cursor: "pointer",
+            fontWeight: 900,
+            fontSize: 14,
+            minHeight: 46,
+          }}
+        >
+          Næste stop (app)
+        </button>
+
         <div style={{ flex: 1 }} />
 
         <div style={{ minWidth: 320 }}>
@@ -1365,61 +1374,60 @@ async function planDay() {
           gap: 16,
         }}
       >
-       <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
-  <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
+        <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
+          <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
 
-  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-    <div style={{ opacity: 0.9 }}>
-      {routeStats.stopCount} stop
-    </div>
+          <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+            <div style={{ opacity: 0.9 }}>{routeStats.stopCount} stop</div>
 
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <span
-        style={{
-          padding: "6px 10px",
-          borderRadius: 999,
-          border: "1px solid #333",
-          background: "#111",
-          fontSize: 12,
-          fontWeight: 900,
-        }}
-      >
-        🚛 {routeStats.totalKm.toFixed(1)} km
-      </span>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "#111",
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
+              >
+                🚛 {routeStats.totalKm.toFixed(1)} km
+              </span>
 
-      <span
-        style={{
-          padding: "6px 10px",
-          borderRadius: 999,
-          border: "1px solid #333",
-          background: "#111",
-          fontSize: 12,
-          fontWeight: 900,
-        }}
-      >
-        ⏱️ ca. {formatDriveTime(routeStats.driveMinutes)}
-      </span>
-    </div>
-  </div>
-
-  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-    {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
-
-    {sortedStops.map((s, i) => {
-      const c = s.customer;
-      const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
-      const todays = todayBinsByCustomer[s.customer_id] ?? [];
-
-      return (
-        <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <div style={{ fontWeight: 900 }}>
-              {i + 1}. {c?.name ?? "(ukendt)"}{" "}
-              <span style={{ marginLeft: 8, color: statusColor, fontWeight: 900 }}>
-                {s.status === "planned" ? "PLAN" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
+              <span
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #333",
+                  background: "#111",
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
+              >
+                ⏱️ ca. {formatDriveTime(routeStats.driveMinutes)}
               </span>
             </div>
-            <div style={{ display: "flex", gap: 6 }}> 
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+            {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
+
+            {sortedStops.map((s, i) => {
+              const c = s.customer;
+              const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
+              const todays = todayBinsByCustomer[s.customer_id] ?? [];
+
+              return (
+                <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ fontWeight: 900 }}>
+                      {i + 1}. {c?.name ?? "(ukendt)"}{" "}
+                      <span style={{ marginLeft: 8, color: statusColor, fontWeight: 900 }}>
+                        {s.status === "planned" ? "PLAN" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 6 }}>
                       <button
                         onClick={() => moveStop(s.id, -1).catch((e) => setError(String(e?.message ?? e)))}
                         disabled={i === 0}
@@ -1435,6 +1443,7 @@ async function planDay() {
                       >
                         ↑
                       </button>
+
                       <button
                         onClick={() => moveStop(s.id, 1).catch((e) => setError(String(e?.message ?? e)))}
                         disabled={i === sortedStops.length - 1}
