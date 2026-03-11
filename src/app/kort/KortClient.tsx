@@ -20,7 +20,7 @@ type Customer = {
 
 type RouteDay = {
   id: string;
-  route_date: string; // YYYY-MM-DD
+  route_date: string;
   notes: string | null;
 };
 
@@ -225,6 +225,60 @@ function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number) {
   return R * c;
 }
 
+function routeDistanceKm(route: RouteStop[], hq: { lat: number; lng: number }) {
+  if (route.length === 0) return 0;
+
+  let total = 0;
+
+  total += distanceKm(hq.lat, hq.lng, route[0].customer!.lat!, route[0].customer!.lng!);
+
+  for (let i = 0; i < route.length - 1; i++) {
+    total += distanceKm(
+      route[i].customer!.lat!,
+      route[i].customer!.lng!,
+      route[i + 1].customer!.lat!,
+      route[i + 1].customer!.lng!
+    );
+  }
+
+  total += distanceKm(
+    route[route.length - 1].customer!.lat!,
+    route[route.length - 1].customer!.lng!,
+    hq.lat,
+    hq.lng
+  );
+
+  return total;
+}
+
+function twoOpt(route: RouteStop[], hq: { lat: number; lng: number }) {
+  if (route.length < 4) return route;
+
+  let best = [...route];
+  let improved = true;
+
+  while (improved) {
+    improved = false;
+
+    for (let i = 0; i < best.length - 2; i++) {
+      for (let k = i + 1; k < best.length - 1; k++) {
+        const candidate = [
+          ...best.slice(0, i),
+          ...best.slice(i, k + 1).reverse(),
+          ...best.slice(k + 1),
+        ];
+
+        if (routeDistanceKm(candidate, hq) + 0.001 < routeDistanceKm(best, hq)) {
+          best = candidate;
+          improved = true;
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
 function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string }[]) {
   const usable = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
   if (usable.length < 1) {
@@ -233,15 +287,11 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
   }
 
   const HQ = "55.10692093390334,14.822756898314669";
-  const endAtHQ = false;
 
   const origin = HQ;
-  const destination = endAtHQ
-    ? HQ
-    : `${usable[usable.length - 1].lat},${usable[usable.length - 1].lng}`;
+  const destination = HQ;
 
-  const waypointPoints = endAtHQ ? usable : usable.slice(0, -1);
-  const waypoints = waypointPoints.map((p) => `${p.lat},${p.lng}`).join("|");
+  const waypoints = usable.map((p) => `${p.lat},${p.lng}`).join("|");
   const url =
     `https://www.google.com/maps/dir/?api=1` +
     `&origin=${encodeURIComponent(origin)}` +
@@ -835,7 +885,7 @@ export default function KortPage() {
       }
 
       const remaining = [...stopsWithCoords];
-      const optimized: RouteStop[] = [];
+      const greedyRoute: RouteStop[] = [];
 
       let currentLat = HQ.lat;
       let currentLng = HQ.lng;
@@ -858,12 +908,14 @@ export default function KortPage() {
         }
 
         const nextStop = remaining.splice(bestIndex, 1)[0];
-        optimized.push(nextStop);
+        greedyRoute.push(nextStop);
         currentLat = nextStop.customer!.lat!;
         currentLng = nextStop.customer!.lng!;
       }
 
-      const finalStops = [...optimized, ...stopsWithoutCoords];
+      const improvedRoute = twoOpt(greedyRoute, HQ);
+      const finalStops = [...improvedRoute, ...stopsWithoutCoords];
+
       await persistStopOrder(finalStops);
     } catch (e: any) {
       setError(String(e?.message ?? e));
