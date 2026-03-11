@@ -318,6 +318,7 @@ export default function KortPage() {
   const pathname = usePathname();
 
   const [loading, setLoading] = useState(true);
+const [planMessage, setPlanMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const initialDate = searchParams.get("date") || toYMD(new Date());
@@ -1082,6 +1083,47 @@ export default function KortPage() {
       setAdding(false);
     }
   }
+async function suggestCustomersForDate() {
+  try {
+     ...
+  } catch (e:any) {
+     ...
+  } finally {
+     setAdding(false)
+  }
+}
+
+async function planDay() {
+  try {
+    setError(null)
+    setPlanMessage(null)
+    setAdding(true)
+
+    const beforeCount = stops.length
+
+    await suggestCustomersForDate()
+    await new Promise(r => setTimeout(r,150))
+    await optimizeRoute()
+
+    const afterCount = stops.length
+    const added = Math.max(0, afterCount - beforeCount)
+
+    setPlanMessage(
+      added > 0
+        ? `Rute planlagt • ${added} stop tilføjet • rute optimeret`
+        : "Rute planlagt • ingen nye stop • rute optimeret"
+    )
+
+    setTimeout(() => {
+      setPlanMessage(null)
+    }, 3500)
+
+  } catch (e:any) {
+    setError(String(e?.message ?? e))
+  } finally {
+    setAdding(false)
+  }
+}
 
   const filteredCustomers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1171,68 +1213,55 @@ export default function KortPage() {
         </label>
 
         <button
-          onClick={suggestCustomersForDate}
-          disabled={adding}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: adding ? "#222" : "#0f2a1b",
-            border: "1px solid #2ecc71",
-            color: "#dff7e8",
-            cursor: "pointer",
-            fontWeight: 900,
-          }}
-        >
-          {adding ? "Finder…" : "Spande klar til rengøring"}
-        </button>
-
+  onClick={planDay}
+  disabled={adding || optimizing}
+  style={{
+    padding: "12px 16px",
+    borderRadius: 14,
+    background: adding || optimizing ? "#1d2a22" : "#1f8f52",
+    border: "1px solid #2ecc71",
+    color: "#f3fff8",
+    cursor: adding || optimizing ? "not-allowed" : "pointer",
+    fontWeight: 900,
+    fontSize: 14,
+    minHeight: 46,
+  }}
+>
+  {adding || optimizing ? "Planlægger…" : "Planlæg dagen"}
+</button>
+  <button
+  onClick={() => openGoogleMapsRoute(selectedPoints)}
+  disabled={selectedPoints.length < 1}
+  style={{
+    padding: "12px 16px",
+    borderRadius: 14,
+    background: selectedPoints.length < 1 ? "#161616" : "#151515",
+    border: "1px solid #3a3a3a",
+    color: "#fff",
+    cursor: selectedPoints.length < 1 ? "not-allowed" : "pointer",
+    fontWeight: 900,
+    fontSize: 14,
+    minHeight: 46,
+  }}
+>
+  Åbn rute (fra HQ)
+</button>
         <button
-          onClick={optimizeRoute}
-          disabled={optimizing || stops.length < 2}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: optimizing || stops.length < 2 ? "#222" : "#10243a",
-            border: "1px solid #4ea1ff",
-            color: "#dbeeff",
-            cursor: optimizing || stops.length < 2 ? "not-allowed" : "pointer",
-            fontWeight: 900,
-          }}
-        >
-          {optimizing ? "Optimerer…" : "Optimér rute"}
-        </button>
-
-        <button
-          onClick={() => openGoogleMapsRoute(selectedPoints)}
-          disabled={selectedPoints.length < 1}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: selectedPoints.length < 1 ? "#222" : "#1a1a1a",
-            border: "1px solid #444",
-            color: "#fff",
-            cursor: selectedPoints.length < 1 ? "not-allowed" : "pointer",
-            fontWeight: 900,
-          }}
-        >
-          Åbn rute (fra HQ)
-        </button>
-
-        <button
-          onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: "#1a1a1a",
-            border: "1px solid #444",
-            color: "#fff",
-            cursor: "pointer",
-            fontWeight: 900,
-          }}
-        >
-          Næste stop (app)
-        </button>
-
+  onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
+  style={{
+    padding: "12px 16px",
+    borderRadius: 14,
+    background: "#151515",
+    border: "1px solid #3a3a3a",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 14,
+    minHeight: 46,
+  }}
+>
+  Næste stop (app)
+</button>
         <div style={{ flex: 1 }} />
 
         <div style={{ minWidth: 320 }}>
