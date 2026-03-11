@@ -1365,61 +1365,61 @@ async function planDay() {
           gap: 16,
         }}
       >
-        <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
+       <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
+  <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
 
-<div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-  <div style={{ opacity: 0.9 }}>
-    {routeStats.stopCount} stop
+  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+    <div style={{ opacity: 0.9 }}>
+      {routeStats.stopCount} stop
+    </div>
+
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <span
+        style={{
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: "1px solid #333",
+          background: "#111",
+          fontSize: 12,
+          fontWeight: 900,
+        }}
+      >
+        🚛 {routeStats.totalKm.toFixed(1)} km
+      </span>
+
+      <span
+        style={{
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: "1px solid #333",
+          background: "#111",
+          fontSize: 12,
+          fontWeight: 900,
+        }}
+      >
+        ⏱️ ca. {formatDriveTime(routeStats.driveMinutes)}
+      </span>
+    </div>
   </div>
 
-  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-    <span
-      style={{
-        padding: "6px 10px",
-        borderRadius: 999,
-        border: "1px solid #333",
-        background: "#111",
-        fontSize: 12,
-        fontWeight: 900,
-      }}
-    >
-      🚛 {routeStats.totalKm.toFixed(1)} km
-    </span>
+  <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+    {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
 
-    <span
-      style={{
-        padding: "6px 10px",
-        borderRadius: 999,
-        border: "1px solid #333",
-        background: "#111",
-        fontSize: 12,
-        fontWeight: 900,
-      }}
-    >
-      ⏱️ ca. {formatDriveTime(routeStats.driveMinutes)}
-    </span>
-  </div>
-</div>
+    {sortedStops.map((s, i) => {
+      const c = s.customer;
+      const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
+      const todays = todayBinsByCustomer[s.customer_id] ?? [];
 
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-            {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
-
-            {sortedStops.map((s, i) => {
-              const c = s.customer;
-              const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
-              const todays = todayBinsByCustomer[s.customer_id] ?? [];
-
-              return (
-                <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ fontWeight: 900 }}>
-                      {i + 1}. {c?.name ?? "(ukendt)"}{" "}
-                      <span style={{ marginLeft: 8, color: statusColor, fontWeight: 900 }}>
-                        {s.status === "planned" ? "PLAN" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", gap: 6 }}>
+      return (
+        <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ fontWeight: 900 }}>
+              {i + 1}. {c?.name ?? "(ukendt)"}{" "}
+              <span style={{ marginLeft: 8, color: statusColor, fontWeight: 900 }}>
+                {s.status === "planned" ? "PLAN" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}> 
                       <button
                         onClick={() => moveStop(s.id, -1).catch((e) => setError(String(e?.message ?? e)))}
                         disabled={i === 0}
