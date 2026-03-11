@@ -115,7 +115,6 @@ const nextDateBadgeStyle: React.CSSProperties = {
   color: "#dff7e8",
 };
 
-// (I beholder jeres week-group helpers — bruges ikke i foreslå længere, men kan være nyttige senere)
 function isoWeekNumber(date: Date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -124,12 +123,14 @@ function isoWeekNumber(date: Date) {
   const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return weekNo;
 }
+
 function computeWeekGroup(date: Date) {
   const w = isoWeekNumber(date);
   const parity = w % 2 === 0 ? "lige" : "ulige";
   const abc = ["A", "B", "C"][(w - 1) % 3];
   return { week: w, parity, abc };
 }
+
 function matchesWeekGroup(rule: string | null | undefined, date: Date) {
   if (!rule || rule === "" || rule === "alle" || rule === "ingen") return true;
 
@@ -173,7 +174,6 @@ function weekGroupLabel(w: string | null) {
   return w;
 }
 
-// ✅ Ikoner + korte labels til “I dag”
 function binIconShort(t: string | null | undefined) {
   switch ((t ?? "").toLowerCase()) {
     case "madaffald":
@@ -188,6 +188,7 @@ function binIconShort(t: string | null | undefined) {
       return "♻️";
   }
 }
+
 function binLabelShort(t: string | null) {
   switch ((t ?? "").toLowerCase()) {
     case "madaffald":
@@ -201,6 +202,27 @@ function binLabelShort(t: string | null) {
     default:
       return t ?? "Ukendt";
   }
+}
+
+function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const R = 6371;
+
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+
+  const h =
+    sinDLat * sinDLat +
+    Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return R * c;
 }
 
 function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string }[]) {
@@ -253,11 +275,9 @@ export default function KortPage() {
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
 
-  // ✅ Spande klar til denne rutedato (fra gårsdagens BOFA)
   const [todayBinsByCustomer, setTodayBinsByCustomer] = useState<Record<string, string[]>>({});
-
-  // ✅ Forsøg / næste dato pr kunde+bin
   const [binOpportunityByCustomerBin, setBinOpportunityByCustomerBin] = useState<
     Record<string, BinOpportunityInfo>
   >({});
@@ -345,8 +365,19 @@ export default function KortPage() {
     if (error) throw error;
 
     const rows = (data ?? []) as RouteStop[];
-    const map = new Map(allCustomers.map((c) => [c.id, c]));
-    const withCustomers = rows.map((r) => ({ ...r, customer: map.get(r.customer_id) }));
+    const customerMap = new Map(allCustomers.map((c) => [c.id, c]));
+
+    const withCustomers = rows
+      .map((r) => ({
+        ...r,
+        customer: customerMap.get(r.customer_id),
+      }))
+      .sort((a, b) => a.order_index - b.order_index)
+      .map((r, idx) => ({
+        ...r,
+        order_index: idx,
+      }));
+
     setStops(withCustomers);
   }
 
@@ -411,6 +442,35 @@ export default function KortPage() {
 
     setTodayBinsByCustomer(todayMap);
     setBinOpportunityByCustomerBin(infoMap);
+  }
+
+  async function persistStopOrder(orderedStops: RouteStop[]) {
+    const normalized = orderedStops.map((stop, index) => ({
+      ...stop,
+      order_index: index,
+    }));
+
+    for (const stop of normalized) {
+      const { error } = await supabase
+        .from("route_stops")
+        .update({ order_index: stop.order_index })
+        .eq("id", stop.id);
+
+      if (error) throw error;
+    }
+
+    setStops(normalized);
+  }
+
+  async function reindexCurrentStops(nextStops: RouteStop[]) {
+    const normalized = [...nextStops]
+      .sort((a, b) => a.order_index - b.order_index)
+      .map((stop, index) => ({
+        ...stop,
+        order_index: index,
+      }));
+
+    await persistStopOrder(normalized);
   }
 
   useEffect(() => {
@@ -666,7 +726,13 @@ export default function KortPage() {
     if (error) throw error;
 
     const customer = allCustomers.find((c) => c.id === customerId);
-    setStops((prev) => [...prev, { ...(data as RouteStop), customer }]);
+    setStops((prev) => [
+      ...prev,
+      {
+        ...(data as RouteStop),
+        customer,
+      },
+    ]);
   }
 
   async function updateStop(id: string, patch: Partial<RouteStop>) {
@@ -714,30 +780,96 @@ export default function KortPage() {
   async function removeStop(id: string) {
     const { error } = await supabase.from("route_stops").delete().eq("id", id);
     if (error) throw error;
-    setStops((prev) => prev.filter((s) => s.id !== id));
+
+    const nextStops = stops.filter((s) => s.id !== id);
+    await reindexCurrentStops(nextStops);
   }
 
   async function moveStop(id: string, dir: -1 | 1) {
     const sorted = [...stops].sort((a, b) => a.order_index - b.order_index);
     const idx = sorted.findIndex((s) => s.id === id);
     const swapWith = idx + dir;
+
     if (idx < 0 || swapWith < 0 || swapWith >= sorted.length) return;
 
-    const a = sorted[idx];
-    const b = sorted[swapWith];
+    const moved = [...sorted];
+    const [item] = moved.splice(idx, 1);
+    moved.splice(swapWith, 0, item);
 
-    const { error: e1 } = await supabase.from("route_stops").update({ order_index: b.order_index }).eq("id", a.id);
-    if (e1) throw e1;
-    const { error: e2 } = await supabase.from("route_stops").update({ order_index: a.order_index }).eq("id", b.id);
-    if (e2) throw e2;
+    await persistStopOrder(moved);
+  }
 
-    setStops((prev) =>
-      prev.map((s) => {
-        if (s.id === a.id) return { ...s, order_index: b.order_index };
-        if (s.id === b.id) return { ...s, order_index: a.order_index };
-        return s;
-      })
-    );
+  async function optimizeRoute() {
+    try {
+      setError(null);
+      setOptimizing(true);
+
+      if (stops.length < 2) return;
+
+      const HQ = {
+        lat: 55.10692093390334,
+        lng: 14.822756898314669,
+      };
+
+      const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
+
+      const stopsWithCoords = sortedStops.filter(
+        (s) =>
+          s.customer?.lat != null &&
+          s.customer?.lng != null &&
+          Number.isFinite(s.customer.lat) &&
+          Number.isFinite(s.customer.lng)
+      );
+
+      const stopsWithoutCoords = sortedStops.filter(
+        (s) =>
+          s.customer?.lat == null ||
+          s.customer?.lng == null ||
+          !Number.isFinite(s.customer.lat) ||
+          !Number.isFinite(s.customer.lng)
+      );
+
+      if (stopsWithCoords.length < 2) {
+        setError("Der er ikke nok stops med koordinater til at optimere ruten.");
+        return;
+      }
+
+      const remaining = [...stopsWithCoords];
+      const optimized: RouteStop[] = [];
+
+      let currentLat = HQ.lat;
+      let currentLng = HQ.lng;
+
+      while (remaining.length > 0) {
+        let bestIndex = 0;
+        let bestDistance = Infinity;
+
+        for (let i = 0; i < remaining.length; i++) {
+          const stop = remaining[i];
+          const lat = stop.customer!.lat!;
+          const lng = stop.customer!.lng!;
+
+          const dist = distanceKm(currentLat, currentLng, lat, lng);
+
+          if (dist < bestDistance) {
+            bestDistance = dist;
+            bestIndex = i;
+          }
+        }
+
+        const nextStop = remaining.splice(bestIndex, 1)[0];
+        optimized.push(nextStop);
+        currentLat = nextStop.customer!.lat!;
+        currentLng = nextStop.customer!.lng!;
+      }
+
+      const finalStops = [...optimized, ...stopsWithoutCoords];
+      await persistStopOrder(finalStops);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setOptimizing(false);
+    }
   }
 
   async function suggestCustomersForDate() {
@@ -837,15 +969,16 @@ export default function KortPage() {
           src={scriptSrc}
           strategy="afterInteractive"
           onLoad={() => {
-  setTimeout(() => {
-    if ((window as any).google?.maps) {
-      setMapsReady(true);
-      setError(null);
-    } else {
-      setError("Google script loaded, men google.maps mangler.");
-    }
-  }, 300);
-}}          onError={() => setError("Kunne ikke loade Google Maps script (netværk/adblock).")}
+            setTimeout(() => {
+              if ((window as any).google?.maps) {
+                setMapsReady(true);
+                setError(null);
+              } else {
+                setError("Google script loaded, men google.maps mangler.");
+              }
+            }, 300);
+          }}
+          onError={() => setError("Kunne ikke loade Google Maps script (netværk/adblock).")}
         />
       ) : null}
 
@@ -909,6 +1042,22 @@ export default function KortPage() {
           }}
         >
           {adding ? "Finder…" : "Spande klar til rengøring"}
+        </button>
+
+        <button
+          onClick={optimizeRoute}
+          disabled={optimizing || stops.length < 2}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: optimizing || stops.length < 2 ? "#222" : "#10243a",
+            border: "1px solid #4ea1ff",
+            color: "#dbeeff",
+            cursor: optimizing || stops.length < 2 ? "not-allowed" : "pointer",
+            fontWeight: 900,
+          }}
+        >
+          {optimizing ? "Optimerer…" : "Optimér rute"}
         </button>
 
         <button
@@ -1038,7 +1187,7 @@ export default function KortPage() {
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
                       <button
-                        onClick={() => moveStop(s.id, -1)}
+                        onClick={() => moveStop(s.id, -1).catch((e) => setError(String(e?.message ?? e)))}
                         disabled={i === 0}
                         style={{
                           padding: "6px 8px",
@@ -1053,7 +1202,7 @@ export default function KortPage() {
                         ↑
                       </button>
                       <button
-                        onClick={() => moveStop(s.id, 1)}
+                        onClick={() => moveStop(s.id, 1).catch((e) => setError(String(e?.message ?? e)))}
                         disabled={i === sortedStops.length - 1}
                         style={{
                           padding: "6px 8px",
@@ -1204,7 +1353,7 @@ export default function KortPage() {
                     </button>
 
                     <button
-                      onClick={() => updateStop(s.id, { status: "planned", done_at: null })}
+                      onClick={() => updateStop(s.id, { status: "planned", done_at: null }).catch((e) => setError(String(e?.message ?? e)))}
                       style={{
                         padding: "8px 10px",
                         borderRadius: 12,
@@ -1219,7 +1368,7 @@ export default function KortPage() {
                     </button>
 
                     <button
-                      onClick={() => removeStop(s.id)}
+                      onClick={() => removeStop(s.id).catch((e) => setError(String(e?.message ?? e)))}
                       style={{
                         marginLeft: "auto",
                         padding: "8px 10px",
