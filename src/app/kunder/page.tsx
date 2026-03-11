@@ -50,6 +50,24 @@ type BinOpportunityInfo = {
   nextDate: string | null;
 };
 
+type CustomerDocRow = {
+  customer_id: string;
+  note: string | null;
+  note_image_path: string | null;
+  route_day_id: string | null;
+};
+
+type RouteDayMini = {
+  id: string;
+  route_date: string;
+};
+
+type CustomerDocInfo = {
+  note: string | null;
+  note_image_path: string | null;
+  routeDate: string | null;
+};
+
 const BIN_LABEL: Record<BinType, string> = {
   madaffald: "Madaffald",
   rest_plast: "Rest + plast",
@@ -174,6 +192,12 @@ function parseBofaDatesToYMD(text: string): string[] {
   return Array.from(new Set(out)).sort();
 }
 
+function getRouteNotePublicUrl(path: string | null | undefined) {
+  if (!path) return null;
+  const { data } = supabase.storage.from("route-notes").getPublicUrl(path);
+  return data.publicUrl;
+}
+
 export default function KunderPage() {
   const router = useRouter();
 
@@ -219,6 +243,7 @@ export default function KunderPage() {
   const [nextPickupByCustomerBin, setNextPickupByCustomerBin] = useState<Record<string, string | null>>({});
   const [binOpportunityByCustomerBin, setBinOpportunityByCustomerBin] = useState<Record<string, BinOpportunityInfo>>({});
   const [doneThisCycleByCustomerBin, setDoneThisCycleByCustomerBin] = useState<Record<string, boolean>>({});
+  const [latestDocByCustomer, setLatestDocByCustomer] = useState<Record<string, CustomerDocInfo>>({});
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -268,6 +293,7 @@ export default function KunderPage() {
       setNextPickupByCustomerBin({});
       setBinOpportunityByCustomerBin({});
       setDoneThisCycleByCustomerBin({});
+      setLatestDocByCustomer({});
       return;
     }
 
@@ -283,6 +309,7 @@ export default function KunderPage() {
       setNextPickupByCustomerBin({});
       setBinOpportunityByCustomerBin({});
       setDoneThisCycleByCustomerBin({});
+      setLatestDocByCustomer({});
       return;
     }
 
@@ -338,6 +365,7 @@ export default function KunderPage() {
     if (monthPickupErr) {
       setBinOpportunityByCustomerBin({});
       setDoneThisCycleByCustomerBin({});
+      setLatestDocByCustomer({});
       return;
     }
 
@@ -377,6 +405,7 @@ export default function KunderPage() {
 
     if (historyErr) {
       setDoneThisCycleByCustomerBin({});
+      setLatestDocByCustomer({});
       return;
     }
 
@@ -397,6 +426,64 @@ export default function KunderPage() {
     }
 
     setDoneThisCycleByCustomerBin(doneCycleMap);
+
+    const { data: docData, error: docErr } = await supabase
+      .from("route_stops")
+      .select("customer_id,note,note_image_path,route_day_id")
+      .in("customer_id", ids)
+      .or("note.not.is.null,note_image_path.not.is.null");
+
+    if (docErr) {
+      setLatestDocByCustomer({});
+      return;
+    }
+
+    const routeDayIds = Array.from(
+      new Set(
+        ((docData ?? []) as CustomerDocRow[])
+          .map((r) => r.route_day_id)
+          .filter((v): v is string => !!v)
+      )
+    );
+
+    let routeDayMap: Record<string, string> = {};
+
+    if (routeDayIds.length > 0) {
+      const { data: rdData, error: rdErr } = await supabase
+        .from("route_days")
+        .select("id,route_date")
+        .in("id", routeDayIds);
+
+      if (!rdErr) {
+        routeDayMap = Object.fromEntries(
+          ((rdData ?? []) as RouteDayMini[]).map((r) => [r.id, r.route_date])
+        );
+      }
+    }
+
+    const docMap: Record<string, CustomerDocInfo> = {};
+
+    for (const row of (docData ?? []) as CustomerDocRow[]) {
+      const routeDate = row.route_day_id ? routeDayMap[row.route_day_id] ?? null : null;
+      const existing = docMap[row.customer_id];
+
+      const shouldReplace =
+        !existing ||
+        (routeDate ?? "") > (existing.routeDate ?? "") ||
+        ((routeDate ?? "") === (existing.routeDate ?? "") &&
+          !!row.note_image_path &&
+          !existing.note_image_path);
+
+      if (shouldReplace) {
+        docMap[row.customer_id] = {
+          note: row.note,
+          note_image_path: row.note_image_path,
+          routeDate,
+        };
+      }
+    }
+
+    setLatestDocByCustomer(docMap);
   }
 
   useEffect(() => {
@@ -629,6 +716,50 @@ export default function KunderPage() {
     );
   }
 
+  function renderLatestDocumentation(customerId: string) {
+    const doc = latestDocByCustomer[customerId];
+    if (!doc) return null;
+
+    const imageUrl = getRouteNotePublicUrl(doc.note_image_path);
+
+    return (
+      <div
+        style={{
+          marginTop: 8,
+          padding: 8,
+          borderRadius: 12,
+          border: "1px solid #2b2b2b",
+          background: "#111",
+          maxWidth: 220,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.9 }}>
+          Dokumentation{doc.routeDate ? ` · ${doc.routeDate}` : ""}
+        </div>
+
+        {doc.note ? (
+          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, whiteSpace: "pre-wrap" }}>
+            {doc.note}
+          </div>
+        ) : null}
+
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt="Dokumentation"
+            style={{
+              width: "100%",
+              marginTop: 8,
+              borderRadius: 10,
+              border: "1px solid #333",
+              display: "block",
+            }}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
   function renderTable(list: CustomerRow[]) {
     if (list.length === 0) return <div style={{ opacity: 0.75, padding: 12 }}>Ingen kunder her endnu.</div>;
 
@@ -670,6 +801,8 @@ export default function KunderPage() {
                     ) : (
                       <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
                     )}
+
+                    {renderLatestDocumentation(c.id)}
                   </td>
 
                   <td style={styles.td}>{c.address}</td>
@@ -719,7 +852,7 @@ export default function KunderPage() {
                       onClick={() => router.push(`/kunder/${c.id}/historik`)}
                       style={{ ...styles.smallBtn, marginLeft: 0 }}
                     >
-                      Historik
+                      {latestDocByCustomer[c.id] ? "Historik 📷" : "Historik"}
                     </button>
 
                     <button
@@ -783,6 +916,8 @@ export default function KunderPage() {
                 )}
               </div>
 
+              {renderLatestDocumentation(c.id)}
+
               <div style={{ marginTop: 10 }}>
                 <div style={{ fontWeight: 800, marginBottom: 6, opacity: 0.9 }}>Spande</div>
 
@@ -822,7 +957,7 @@ export default function KunderPage() {
                   onClick={() => router.push(`/kunder/${c.id}/historik`)}
                   style={{ ...styles.smallBtn, marginLeft: 0 }}
                 >
-                  Historik
+                  {latestDocByCustomer[c.id] ? "Historik 📷" : "Historik"}
                 </button>
 
                 <button
