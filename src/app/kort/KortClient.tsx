@@ -1220,7 +1220,7 @@ export default function KortPage() {
         />
       ) : null}
 
-      <AppHeader title="RenSpand Ruter" subtitle={`Kort · ${routeDate}`} />
+      <AppHeader title="RenSpand Ruter" subtitle={`Kort · ${routeDate.split("-").reverse().join("-")}`} />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h1 style={{ fontSize: 44, fontWeight: 900, margin: 0 }}>Kort</h1>

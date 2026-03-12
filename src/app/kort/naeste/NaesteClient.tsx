@@ -506,7 +506,7 @@ export default function NaestePage() {
         <div>
           <div style={{ fontSize: 26, fontWeight: 900 }}>Næste stop</div>
           <div style={{ opacity: 0.85, marginTop: 4 }}>
-            Dato: <b>{routeDate}</b> · Stops: <b>{sortedStops.length}</b> · PLAN: <b>{plannedCount}</b>
+            Dato: <b>{routeDate.split("-").reverse().join("-")}</b> · Stops: <b>{sortedStops.length}</b> · PLAN: <b>{plannedCount}</b>
           </div>
         </div>
 
