@@ -29,6 +29,7 @@ type RouteStop = {
   done_at: string | null;
   note: string | null;
   note_image_path: string | null;
+  planned_bin_types: string[] | null;
   customer?: Customer;
 };
 
@@ -110,7 +111,6 @@ export default function NaestePage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Auth check
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getSession();
@@ -139,13 +139,21 @@ export default function NaestePage() {
 
     const { data: sRows, error: sErr } = await supabase
       .from("route_stops")
-      .select("id,route_day_id,customer_id,order_index,status,done_at,note,note_image_path")
+      .select(
+        "id,route_day_id,customer_id,order_index,status,done_at,note,note_image_path,planned_bin_types"
+      )
       .eq("route_day_id", rdTyped.id)
       .order("order_index", { ascending: true });
 
     if (sErr) throw sErr;
 
-    const stopsRaw = (sRows ?? []) as RouteStop[];
+    const stopsRaw = ((sRows ?? []) as RouteStop[]).map((s) => ({
+      ...s,
+      planned_bin_types: Array.isArray(s.planned_bin_types)
+        ? s.planned_bin_types
+        : [],
+    }));
+
     if (stopsRaw.length === 0) {
       setStops([]);
       setIdx(0);
@@ -181,33 +189,30 @@ export default function NaestePage() {
   }
 
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
 
-  if (userErr) throw userErr;
-  if (!user) throw new Error("Ingen bruger er logget ind.");
+    if (userErr) throw userErr;
+    if (!user) throw new Error("Ingen bruger er logget ind.");
 
-  const displayName =
-    user.user_metadata?.full_name ||
-    user.user_metadata?.name ||
-    user.email ||
-    "Ukendt bruger";
+    const displayName =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email ||
+      "Ukendt bruger";
 
-  const { data: bins, error: binsErr } = await supabase
-    .from("customer_bins")
-    .select("bin_type")
-    .eq("customer_id", stop.customer_id);
+    const plannedBins = Array.isArray(stop.planned_bin_types)
+      ? stop.planned_bin_types.filter(Boolean)
+      : [];
 
-  if (binsErr) throw binsErr;
+    if (plannedBins.length === 0) return;
 
-  const rows = ((bins ?? []) as Array<{ bin_type: string | null }>)
-    .filter((b) => !!b.bin_type)
-    .map((b) => ({
+    const rows = plannedBins.map((binType) => ({
       customer_id: stop.customer_id,
       route_stop_id: stop.id,
-      bin_type: b.bin_type as string,
+      bin_type: binType,
       status,
       serviced_at: new Date().toISOString(),
       note: stop.note ?? null,
@@ -216,11 +221,10 @@ export default function NaestePage() {
       serviced_by_name: displayName,
     }));
 
-  if (rows.length === 0) return;
+    const { error: histErr } = await supabase.from("service_history").insert(rows);
+    if (histErr) throw histErr;
+  }
 
-  const { error: histErr } = await supabase.from("service_history").insert(rows);
-  if (histErr) throw histErr;
-}
   useEffect(() => {
     (async () => {
       try {
@@ -233,7 +237,6 @@ export default function NaestePage() {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeDate]);
 
   const sortedStops = useMemo(
@@ -548,6 +551,26 @@ export default function NaestePage() {
                 {customerAddr(current.customer)}
                 {!current.customer?.lat || !current.customer?.lng ? " • (mangler koordinater)" : ""}
               </div>
+
+              {Array.isArray(current.planned_bin_types) && current.planned_bin_types.length > 0 ? (
+                <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {current.planned_bin_types.map((bin) => (
+                    <span
+                      key={bin}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #333",
+                        background: "#111",
+                        fontSize: 12,
+                        fontWeight: 900,
+                      }}
+                    >
+                      {bin}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
 
               {current.note ? (
                 <div style={{ marginTop: 8, opacity: 0.95 }}>
