@@ -16,6 +16,8 @@ type Customer = {
   city: string | null;
   lat: number | null;
   lng: number | null;
+  phone: string | null;
+  email: string | null;
 };
 
 type RouteDay = {
@@ -424,7 +426,7 @@ export default function KortPage() {
   async function loadCustomers() {
     const { data, error } = await supabase
       .from("customers")
-      .select("id,name,address,city,lat,lng")
+      .select("id,name,address,city,lat,lng,phone,email")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -1494,10 +1496,37 @@ export default function KortPage() {
                   </div>
 
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                    {(c?.address ?? "").trim()} {c?.city ? `, ${c.city}` : ""}
-                    {!c?.lat || !c?.lng ? " • (mangler koordinater)" : ""}
-                  </div>
+  {(c?.address ?? "").trim()} {c?.city ? `, ${c.city}` : ""}
+  {!c?.lat || !c?.lng ? " • (mangler koordinater)" : ""}
+</div>
 
+{c?.phone ? (
+  <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+    <span style={{ fontSize: 12, opacity: 0.9 }}>
+      <b>Tlf:</b> {c.phone}
+    </span>
+
+    <button
+      onClick={() => openSmsToCustomer(c)}
+      style={{
+        padding: "6px 10px",
+        borderRadius: 10,
+        border: "1px solid #4ea1ff",
+        background: "#101010",
+        color: "#dbeeff",
+        cursor: "pointer",
+        fontWeight: 800,
+        fontSize: 12,
+      }}
+    >
+      📩 SMS
+    </button>
+  </div>
+) : (
+  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
+    <b>Tlf:</b> mangler
+  </div>
+)}
                   {todays.length ? (
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {todays.map((bt) => {
@@ -1579,6 +1608,20 @@ export default function KortPage() {
                       }}
                     >
                       Note
+<button
+  onClick={() => c && openSmsToCustomer(c)}
+  style={{
+    padding: "8px 10px",
+    borderRadius: 12,
+    border: "1px solid #4ea1ff",
+    background: "#101010",
+    color: "#dbeeff",
+    cursor: "pointer",
+    fontWeight: 900,
+  }}
+>
+  SMS
+</button>
                     </button>
 
                     <button
