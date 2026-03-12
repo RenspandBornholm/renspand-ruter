@@ -1519,11 +1519,20 @@ export default function KortPage() {
 </div>
 
 {c?.phone ? (
-  <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+  <div
+    style={{
+      marginTop: 6,
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      alignItems: "center",
+    }}
+  >
     <span style={{ fontSize: 12, opacity: 0.9 }}>
       <b>Tlf:</b> {c.phone}
     </span>
-<button
+
+    <button
       onClick={() => openSmsToCustomer(c)}
       style={{
         padding: "6px 10px",
@@ -1545,12 +1554,7 @@ export default function KortPage() {
   </div>
 )}
 
-      </div>
-) : (
-  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
-    <b>Tlf:</b> mangler
-  </div>
-)}
+      
                   {todays.length ? (
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {todays.map((bt) => {
