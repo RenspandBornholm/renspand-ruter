@@ -134,16 +134,38 @@ async function deleteHistory() {
 
   if (!confirmDelete) return;
 
-  const { error } = await supabase
-    .from("service_history")
-    .delete()
-    .eq("customer_id", customerId);
+  try {
+    const { data: rows, error: fetchErr } = await supabase
+      .from("service_history")
+      .select("image_path")
+      .eq("customer_id", customerId);
 
-  if (error) {
-    alert("Kunne ikke slette historik");
-    console.error(error);
-    return;
+    if (fetchErr) throw fetchErr;
+
+    const paths =
+      rows
+        ?.map((r) => r.image_path)
+        .filter((p) => !!p) ?? [];
+
+    if (paths.length > 0) {
+      await supabase.storage
+        .from("route-notes")
+        .remove(paths);
+    }
+
+    const { error } = await supabase
+      .from("service_history")
+      .delete()
+      .eq("customer_id", customerId);
+
+    if (error) throw error;
+
+    setHistory([]);
+  } catch (err) {
+    console.error(err);
+    alert("Kunne ikke slette historik korrekt");
   }
+}
 
   setHistory([]);
 }
@@ -226,17 +248,19 @@ async function deleteHistory() {
 <button
   onClick={deleteHistory}
   style={{
-    padding: "10px 14px",
-    borderRadius: 10,
+    padding: "10px 16px",
+    borderRadius: 12,
     border: "1px solid #ff4d4f",
-    background: "#2a0a0a",
+    background: "linear-gradient(180deg,#2a0a0a,#1a0505)",
     color: "#ffd6d6",
     cursor: "pointer",
-    fontWeight: 800,
-    marginLeft: 8,
+    fontWeight: 900,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
   }}
 >
-  Slet historik
+  🗑️ Slet historik
 </button>        
 </div>
 
