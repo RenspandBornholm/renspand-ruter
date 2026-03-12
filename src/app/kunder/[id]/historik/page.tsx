@@ -43,9 +43,10 @@ const BIN_ICON: Record<BinType, string> = {
 };
 
 function formatYMDFromISO(iso: string) {
-  return iso.slice(0, 10);
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  if (!y || !m || !d) return iso.slice(0, 10);
+  return `${d}-${m}-${y}`;
 }
-
 function daysSince(iso: string) {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return null;
