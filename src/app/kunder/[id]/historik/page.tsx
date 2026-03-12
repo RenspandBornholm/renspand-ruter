@@ -125,6 +125,28 @@ export default function KundeHistorikPage() {
   const [customer, setCustomer] = useState<CustomerRow | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+async function deleteHistory() {
+  if (!customerId) return;
+
+  const confirmDelete = confirm(
+    "Er du sikker på du vil slette hele historikken på denne kunde?"
+  );
+
+  if (!confirmDelete) return;
+
+  const { error } = await supabase
+    .from("service_history")
+    .delete()
+    .eq("customer_id", customerId);
+
+  if (error) {
+    alert("Kunne ikke slette historik");
+    console.error(error);
+    return;
+  }
+
+  setHistory([]);
+}
 
   useEffect(() => {
     (async () => {
@@ -201,7 +223,22 @@ export default function KundeHistorikPage() {
           <button onClick={() => router.push("/kunder")} style={styles.btn}>
             Tilbage
           </button>
-        </div>
+<button
+  onClick={deleteHistory}
+  style={{
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #ff4d4f",
+    background: "#2a0a0a",
+    color: "#ffd6d6",
+    cursor: "pointer",
+    fontWeight: 800,
+    marginLeft: 8,
+  }}
+>
+  Slet historik
+</button>        
+</div>
 
         {error && <div style={styles.error}>{error}</div>}
 
