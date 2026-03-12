@@ -42,11 +42,12 @@ const BIN_ICON: Record<BinType, string> = {
   metal_glas: "🍾",
 };
 
-function formatYMDFromISO(iso: string) {
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  if (!y || !m || !d) return iso.slice(0, 10);
+function formatDateDK(dateStr: string) {
+  const [y, m, d] = dateStr.slice(0, 10).split("-");
+  if (!y || !m || !d) return dateStr.slice(0, 10);
   return `${d}-${m}-${y}`;
 }
+
 function daysSince(iso: string) {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return null;
@@ -125,50 +126,51 @@ export default function KundeHistorikPage() {
   const [customer, setCustomer] = useState<CustomerRow | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
-async function deleteHistory() {
-  if (!customerId) return;
 
-  const confirmDelete = confirm(
-    "Er du sikker på du vil slette hele historikken på denne kunde?"
-  );
+  async function deleteHistory() {
+    if (!customerId) return;
 
-  if (!confirmDelete) return;
+    const confirmDelete = confirm(
+      "Er du sikker på du vil slette hele historikken på denne kunde?"
+    );
 
-  try {
-    const { data: rows, error: fetchErr } = await supabase
-      .from("service_history")
-      .select("image_path")
-      .eq("customer_id", customerId);
+    if (!confirmDelete) return;
 
-    if (fetchErr) throw fetchErr;
+    try {
+      const { data: rows, error: fetchErr } = await supabase
+        .from("service_history")
+        .select("image_path")
+        .eq("customer_id", customerId);
 
-    const paths =
-      rows
-        ?.map((r) => r.image_path)
-        .filter((p) => !!p) ?? [];
+      if (fetchErr) throw fetchErr;
 
-    if (paths.length > 0) {
-      await supabase.storage
-        .from("route-notes")
-        .remove(paths);
+      const paths =
+        rows
+          ?.map((r) => r.image_path)
+          .filter((p): p is string => !!p) ?? [];
+
+      if (paths.length > 0) {
+        const { error: storageErr } = await supabase.storage
+          .from("route-notes")
+          .remove(paths);
+
+        if (storageErr) throw storageErr;
+      }
+
+      const { error: deleteErr } = await supabase
+        .from("service_history")
+        .delete()
+        .eq("customer_id", customerId);
+
+      if (deleteErr) throw deleteErr;
+
+      setHistory([]);
+      setSelectedImageUrl(null);
+    } catch (err) {
+      console.error(err);
+      alert("Kunne ikke slette historik korrekt");
     }
-
-    const { error } = await supabase
-      .from("service_history")
-      .delete()
-      .eq("customer_id", customerId);
-
-    if (error) throw error;
-
-    setHistory([]);
-  } catch (err) {
-    console.error(err);
-    alert("Kunne ikke slette historik korrekt");
   }
-}
-
-  setHistory([]);
-}
 
   useEffect(() => {
     (async () => {
@@ -230,42 +232,32 @@ async function deleteHistory() {
         <AppHeader title="RenSpand Ruter" subtitle="Kundehistorik" />
 
         <div style={styles.topRow}>
-  <div>
-    <h1 style={styles.h1}>Historik</h1>
-    {customer ? (
-      <div style={{ opacity: 0.8, marginTop: 6 }}>
-        <b>{customer.name}</b>
-        <br />
-        {customer.address ?? ""}
-        {customer.city ? `, ${customer.city}` : ""}
-      </div>
-    ) : null}
-  </div>
+          <div>
+            <h1 style={styles.h1}>Historik</h1>
+            {customer ? (
+              <div style={{ opacity: 0.8, marginTop: 6 }}>
+                <b>{customer.name}</b>
+                <br />
+                {customer.address ?? ""}
+                {customer.city ? `, ${customer.city}` : ""}
+              </div>
+            ) : null}
+          </div>
 
-  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-    <button onClick={() => router.push("/kunder")} style={styles.btn}>
-      Tilbage
-    </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={() => router.push("/kunder")} style={styles.btn}>
+              Tilbage
+            </button>
 
-    <button
-      onClick={deleteHistory}
-      style={{
-        padding: "10px 16px",
-        borderRadius: 12,
-        border: "1px solid #ff4d4f",
-        background: "linear-gradient(180deg,#2a0a0a,#1a0505)",
-        color: "#ffd6d6",
-        cursor: "pointer",
-        fontWeight: 900,
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-      }}
-    >
-      🗑️ Slet historik
-    </button>
-  </div>
-</div>
+            <button
+              onClick={deleteHistory}
+              style={styles.deleteBtn}
+            >
+              🗑️ Slet historik
+            </button>
+          </div>
+        </div>
+
         {error && <div style={styles.error}>{error}</div>}
 
         {!error && history.length === 0 ? (
@@ -275,7 +267,7 @@ async function deleteHistory() {
         <div style={{ marginTop: 18, display: "grid", gap: 14 }}>
           {groupedHistory.map(([date, rows]) => (
             <div key={date} style={styles.dayCard}>
-              <div style={styles.dayTitle}>{date}</div>
+              <div style={styles.dayTitle}>{formatDateDK(date)}</div>
 
               <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                 {rows.map((row) => {
@@ -313,7 +305,7 @@ async function deleteHistory() {
                               }}
                             >
                               {row.status === "done" ? "Rengjort" : "Ikke muligt"} d.{" "}
-                              {formatYMDFromISO(row.serviced_at)}
+                              {formatDateDK(row.serviced_at)}
                             </span>
 
                             {ago !== null ? (
@@ -402,6 +394,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 12,
+    flexWrap: "wrap",
   },
   h1: {
     fontSize: 40,
@@ -416,6 +409,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#fff",
     cursor: "pointer",
     fontWeight: 800,
+  },
+  deleteBtn: {
+    padding: "10px 16px",
+    borderRadius: 12,
+    border: "1px solid #ff4d4f",
+    background: "linear-gradient(180deg,#2a0a0a,#1a0505)",
+    color: "#ffd6d6",
+    cursor: "pointer",
+    fontWeight: 900,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
   },
   error: {
     marginTop: 12,
