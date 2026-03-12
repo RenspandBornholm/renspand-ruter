@@ -828,7 +828,9 @@ export default function KunderPage() {
                                 <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
                                   {renderBinStatus(c.id, b.bin_type)}
                                   {next ? (
-                                    <span style={styles.pill}>BOFA næste: {next}</span>
+                                    <span style={styles.pill}>
+  BOFA næste: {next?.split("-").reverse().join("-")}
+</span>
                                   ) : (
                                     <span style={{ fontSize: 12, opacity: 0.65 }}>Ingen datoer</span>
                                   )}
