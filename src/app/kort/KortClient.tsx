@@ -1053,7 +1053,6 @@ export default function KortPage() {
       setOptimizing(false);
     }
   }
-
   async function suggestCustomersForDate() {
     try {
       setError(null);
