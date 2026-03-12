@@ -693,7 +693,7 @@ export default function KunderPage() {
             ...nextDateBadgeStyle,
           }}
         >
-          {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
+          {info?.nextDate ? `Næste: ${info.nextDate.split("-").reverse().join("-")}` : "Færdig for måneden"}
         </span>
       );
     }
@@ -934,7 +934,7 @@ export default function KunderPage() {
                             </div>
                             <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
                               {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}{" "}
-                              {next ? `· BOFA næste: ${next}` : "· Ingen datoer"}
+                              {next ? `· BOFA næste: ${next.split("-").reverse().join("-")}` : "· Ingen datoer"}
                             </div>
 
                             <div style={{ marginTop: 6 }}>{renderBinStatus(c.id, b.bin_type)}</div>
