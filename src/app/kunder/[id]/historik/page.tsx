@@ -230,40 +230,42 @@ async function deleteHistory() {
         <AppHeader title="RenSpand Ruter" subtitle="Kundehistorik" />
 
         <div style={styles.topRow}>
-          <div>
-            <h1 style={styles.h1}>Historik</h1>
-            {customer ? (
-              <div style={{ opacity: 0.8, marginTop: 6 }}>
-                <b>{customer.name}</b>
-                <br />
-                {customer.address ?? ""}
-                {customer.city ? `, ${customer.city}` : ""}
-              </div>
-            ) : null}
-          </div>
+  <div>
+    <h1 style={styles.h1}>Historik</h1>
+    {customer ? (
+      <div style={{ opacity: 0.8, marginTop: 6 }}>
+        <b>{customer.name}</b>
+        <br />
+        {customer.address ?? ""}
+        {customer.city ? `, ${customer.city}` : ""}
+      </div>
+    ) : null}
+  </div>
 
-          <button onClick={() => router.push("/kunder")} style={styles.btn}>
-            Tilbage
-          </button>
-<button
-  onClick={deleteHistory}
-  style={{
-    padding: "10px 16px",
-    borderRadius: 12,
-    border: "1px solid #ff4d4f",
-    background: "linear-gradient(180deg,#2a0a0a,#1a0505)",
-    color: "#ffd6d6",
-    cursor: "pointer",
-    fontWeight: 900,
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-  }}
->
-  🗑️ Slet historik
-</button>        
+  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+    <button onClick={() => router.push("/kunder")} style={styles.btn}>
+      Tilbage
+    </button>
+
+    <button
+      onClick={deleteHistory}
+      style={{
+        padding: "10px 16px",
+        borderRadius: 12,
+        border: "1px solid #ff4d4f",
+        background: "linear-gradient(180deg,#2a0a0a,#1a0505)",
+        color: "#ffd6d6",
+        cursor: "pointer",
+        fontWeight: 900,
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+      }}
+    >
+      🗑️ Slet historik
+    </button>
+  </div>
 </div>
-
         {error && <div style={styles.error}>{error}</div>}
 
         {!error && history.length === 0 ? (
