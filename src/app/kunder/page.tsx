@@ -215,6 +215,8 @@ export default function KunderPage() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
+const [phone, setPhone] = useState("");
+const [email, setEmail] = useState("");
 
   const [selectedBins, setSelectedBins] = useState<Record<BinType, boolean>>({
     madaffald: false,
@@ -514,12 +516,14 @@ export default function KunderPage() {
       const { data: inserted, error: insErr } = await supabase
         .from("customers")
         .insert({
-          name: name.trim(),
-          address: address.trim(),
-          city: city.trim(),
-          service_type: serviceType,
-          customer_type: customerType,
-        })
+  name: name.trim(),
+  address: address.trim(),
+  city: city.trim(),
+  phone: phone.trim() || null,
+  email: email.trim() || null,
+  service_type: serviceType,
+  customer_type: customerType,
+})
         .select("id")
         .single();
 
@@ -550,6 +554,8 @@ export default function KunderPage() {
       setName("");
       setAddress("");
       setCity("");
+      setPhone("");
+      setEmail("");
       setServiceType("single");
       setCustomerType("private");
       setSelectedBins({
@@ -1052,26 +1058,56 @@ export default function KunderPage() {
           </div>
 
           <div style={styles.formGrid}>
-            <div>
-              <label style={styles.label}>Navn</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Fx Jens Hansen" style={styles.input} />
-            </div>
+  <div>
+    <label style={styles.label}>Navn</label>
+    <input
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      placeholder="Fx Jens Hansen"
+      style={styles.input}
+    />
+  </div>
 
-            <div>
-              <label style={styles.label}>By</label>
-              <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Fx Rønne" style={styles.input} />
-            </div>
+  <div>
+    <label style={styles.label}>By</label>
+    <input
+      value={city}
+      onChange={(e) => setCity(e.target.value)}
+      placeholder="Fx Rønne"
+      style={styles.input}
+    />
+  </div>
 
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={styles.label}>Adresse</label>
-              <input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Fx Nørregade 10"
-                style={styles.input}
-              />
-            </div>
-          </div>
+  <div style={{ gridColumn: "1 / -1" }}>
+    <label style={styles.label}>Adresse</label>
+    <input
+      value={address}
+      onChange={(e) => setAddress(e.target.value)}
+      placeholder="Fx Nørregade 10"
+      style={styles.input}
+    />
+  </div>
+
+  <div>
+    <label style={styles.label}>Telefonnummer</label>
+    <input
+      value={phone}
+      onChange={(e) => setPhone(e.target.value)}
+      placeholder="Fx 20112233"
+      style={styles.input}
+    />
+  </div>
+
+  <div>
+    <label style={styles.label}>Email</label>
+    <input
+      value={email}
+      onChange={(e) => setEmail(e.target.value)}
+      placeholder="Fx kunde@mail.dk"
+      style={styles.input}
+    />
+  </div>
+</div>
 
           <div style={{ marginTop: 14 }}>
             <div style={styles.sectionLabel}>Beholdertype (klik for at vælge)</div>
