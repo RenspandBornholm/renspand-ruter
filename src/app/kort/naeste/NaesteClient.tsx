@@ -181,30 +181,46 @@ export default function NaestePage() {
   }
 
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
-    const { data: bins, error: binsErr } = await supabase
-      .from("customer_bins")
-      .select("bin_type")
-      .eq("customer_id", stop.customer_id);
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
 
-    if (binsErr) throw binsErr;
+  if (userErr) throw userErr;
+  if (!user) throw new Error("Ingen bruger er logget ind.");
 
-    const rows = ((bins ?? []) as Array<{ bin_type: string | null }>)
-      .filter((b) => !!b.bin_type)
-      .map((b) => ({
-        customer_id: stop.customer_id,
-        route_stop_id: stop.id,
-        bin_type: b.bin_type as string,
-        status,
-        serviced_at: new Date().toISOString(),
-        note: stop.note ?? null,
-      }));
+  const displayName =
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.email ||
+    "Ukendt bruger";
 
-    if (rows.length === 0) return;
+  const { data: bins, error: binsErr } = await supabase
+    .from("customer_bins")
+    .select("bin_type")
+    .eq("customer_id", stop.customer_id);
 
-    const { error: histErr } = await supabase.from("service_history").insert(rows);
-    if (histErr) throw histErr;
-  }
+  if (binsErr) throw binsErr;
 
+  const rows = ((bins ?? []) as Array<{ bin_type: string | null }>)
+    .filter((b) => !!b.bin_type)
+    .map((b) => ({
+      customer_id: stop.customer_id,
+      route_stop_id: stop.id,
+      bin_type: b.bin_type as string,
+      status,
+      serviced_at: new Date().toISOString(),
+      note: stop.note ?? null,
+      image_path: stop.note_image_path ?? null,
+      serviced_by_user_id: user.id,
+      serviced_by_name: displayName,
+    }));
+
+  if (rows.length === 0) return;
+
+  const { error: histErr } = await supabase.from("service_history").insert(rows);
+  if (histErr) throw histErr;
+}
   useEffect(() => {
     (async () => {
       try {
