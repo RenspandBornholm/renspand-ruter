@@ -24,6 +24,8 @@ type HistoryRow = {
   serviced_at: string;
   note: string | null;
   created_at: string;
+  image_path: string | null;
+  serviced_by_name: string | null;
 };
 
 const BIN_LABEL: Record<BinType, string> = {
@@ -81,9 +83,33 @@ function agoStyle(days: number) {
     opacity: 0.95,
   };
 
-  if (days <= 7) return { ...base, border: "1px solid #2ecc71", background: "rgba(46,204,113,0.08)" };
-  if (days <= 21) return { ...base, border: "1px solid #f1c40f", background: "rgba(241,196,15,0.08)" };
-  return { ...base, border: "1px solid #ff4d4f", background: "rgba(255,77,79,0.08)" };
+  if (days <= 7) {
+    return {
+      ...base,
+      border: "1px solid #2ecc71",
+      background: "rgba(46,204,113,0.08)",
+    };
+  }
+
+  if (days <= 21) {
+    return {
+      ...base,
+      border: "1px solid #f1c40f",
+      background: "rgba(241,196,15,0.08)",
+    };
+  }
+
+  return {
+    ...base,
+    border: "1px solid #ff4d4f",
+    background: "rgba(255,77,79,0.08)",
+  };
+}
+
+function getPublicImageUrl(path: string | null | undefined) {
+  if (!path) return null;
+  const { data } = supabase.storage.from("route-notes").getPublicUrl(path);
+  return data?.publicUrl ?? null;
 }
 
 export default function KundeHistorikPage() {
@@ -97,6 +123,7 @@ export default function KundeHistorikPage() {
 
   const [customer, setCustomer] = useState<CustomerRow | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -121,7 +148,9 @@ export default function KundeHistorikPage() {
 
         const { data: historyData, error: historyErr } = await supabase
           .from("service_history")
-          .select("id,customer_id,route_stop_id,bin_type,status,serviced_at,note,created_at")
+          .select(
+            "id,customer_id,route_stop_id,bin_type,status,serviced_at,note,created_at,image_path,serviced_by_name"
+          )
           .eq("customer_id", customerId)
           .order("serviced_at", { ascending: false });
 
@@ -153,7 +182,8 @@ export default function KundeHistorikPage() {
   return (
     <div style={{ paddingBottom: "calc(76px + env(safe-area-inset-bottom) + 24px)" }}>
       <div style={styles.page}>
-<AppHeader title="RenSpand Ruter" subtitle="Kundehistorik" />
+        <AppHeader title="RenSpand Ruter" subtitle="Kundehistorik" />
+
         <div style={styles.topRow}>
           <div>
             <h1 style={styles.h1}>Historik</h1>
@@ -186,31 +216,76 @@ export default function KundeHistorikPage() {
               <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                 {rows.map((row) => {
                   const ago = daysSince(row.serviced_at);
+                  const imageUrl = getPublicImageUrl(row.image_path);
 
                   return (
                     <div key={row.id} style={styles.historyItem}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                        <div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <div style={{ width: "100%" }}>
                           <div style={{ fontWeight: 900, fontSize: 18 }}>
                             {BIN_ICON[row.bin_type]} {BIN_LABEL[row.bin_type]}
                           </div>
 
-                          <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                            }}
+                          >
                             <span
                               style={{
                                 ...styles.statusPill,
                                 ...badgeStyle(row.status),
                               }}
                             >
-                              {row.status === "done" ? "Rengjort" : "Ikke muligt"} d. {formatYMDFromISO(row.serviced_at)}
+                              {row.status === "done" ? "Rengjort" : "Ikke muligt"} d.{" "}
+                              {formatYMDFromISO(row.serviced_at)}
                             </span>
 
-                            {ago !== null ? <span style={agoStyle(ago)}>for {ago} dage siden</span> : null}
+                            {ago !== null ? (
+                              <span style={agoStyle(ago)}>for {ago} dage siden</span>
+                            ) : null}
                           </div>
 
+                          {row.serviced_by_name ? (
+                            <div style={styles.metaLine}>
+                              <b>Udført af:</b> {row.serviced_by_name}
+                            </div>
+                          ) : null}
+
                           {row.note ? (
-                            <div style={{ marginTop: 8, fontSize: 13, opacity: 0.92 }}>
+                            <div style={styles.noteBox}>
                               <b>Note:</b> {row.note}
+                            </div>
+                          ) : null}
+
+                          {imageUrl ? (
+                            <div style={{ marginTop: 10 }}>
+                              <div style={styles.metaLine}>
+                                <b>Billede:</b>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => setSelectedImageUrl(imageUrl)}
+                                style={styles.imageButton}
+                              >
+                                <img
+                                  src={imageUrl}
+                                  alt="Dokumentation"
+                                  style={styles.thumb}
+                                />
+                              </button>
                             </div>
                           ) : null}
                         </div>
@@ -223,6 +298,28 @@ export default function KundeHistorikPage() {
           ))}
         </div>
       </div>
+
+      {selectedImageUrl ? (
+        <div style={styles.modalOverlay} onClick={() => setSelectedImageUrl(null)}>
+          <div
+            style={styles.modalCard}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedImageUrl(null)}
+              style={styles.closeBtn}
+            >
+              Luk
+            </button>
+
+            <img
+              src={selectedImageUrl}
+              alt="Dokumentation stort billede"
+              style={styles.fullImage}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <NavTabs />
     </div>
@@ -297,5 +394,67 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 900,
     opacity: 0.95,
+  },
+  metaLine: {
+    marginTop: 8,
+    fontSize: 13,
+    opacity: 0.92,
+  },
+  noteBox: {
+    marginTop: 8,
+    fontSize: 13,
+    opacity: 0.95,
+    lineHeight: 1.45,
+    whiteSpace: "pre-wrap",
+  },
+  imageButton: {
+    marginTop: 6,
+    padding: 0,
+    border: "1px solid #2a2a2a",
+    borderRadius: 12,
+    background: "#0f0f0f",
+    cursor: "pointer",
+    overflow: "hidden",
+  },
+  thumb: {
+    display: "block",
+    width: 160,
+    height: 110,
+    objectFit: "cover",
+  },
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 99999,
+    background: "rgba(0,0,0,0.82)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalCard: {
+    position: "relative",
+    maxWidth: "95vw",
+    maxHeight: "90vh",
+  },
+  closeBtn: {
+    position: "absolute",
+    top: -46,
+    right: 0,
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #2a2a2a",
+    background: "#171717",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 800,
+  },
+  fullImage: {
+    maxWidth: "95vw",
+    maxHeight: "90vh",
+    objectFit: "contain",
+    borderRadius: 14,
+    border: "1px solid #2a2a2a",
+    background: "#111",
   },
 };
