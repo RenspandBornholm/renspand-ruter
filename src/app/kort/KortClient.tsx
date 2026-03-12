@@ -32,6 +32,7 @@ type RouteStop = {
   status: "planned" | "done" | "skipped";
   done_at: string | null;
   note?: string | null;
+  planned_bin_types?: string[] | null;
   customer?: Customer;
 };
 
@@ -343,8 +344,7 @@ export default function KortPage() {
     const sp = new URLSearchParams(searchParams.toString());
     sp.set("date", routeDate);
     router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeDate]);
+  }, [routeDate, pathname, router, searchParams]);
 
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
@@ -459,7 +459,7 @@ export default function KortPage() {
   async function loadStops(routeDayId: string) {
     const { data, error } = await supabase
       .from("route_stops")
-      .select("id,route_day_id,customer_id,order_index,status,done_at,note")
+      .select("id,route_day_id,customer_id,order_index,status,done_at,note,planned_bin_types")
       .eq("route_day_id", routeDayId)
       .order("order_index", { ascending: true });
 
@@ -471,6 +471,7 @@ export default function KortPage() {
     const withCustomers = rows
       .map((r) => ({
         ...r,
+        planned_bin_types: Array.isArray(r.planned_bin_types) ? r.planned_bin_types : [],
         customer: customerMap.get(r.customer_id),
       }))
       .sort((a, b) => a.order_index - b.order_index)
@@ -641,7 +642,6 @@ export default function KortPage() {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -655,7 +655,6 @@ export default function KortPage() {
         setError(String(e?.message ?? e));
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeDate, allCustomers.length]);
 
   useEffect(() => {
@@ -874,7 +873,7 @@ export default function KortPage() {
       map.setCenter(HQ_POS);
       map.setZoom(12);
     }
-  }, [stops, todayBinsByCustomer, binOpportunityByCustomerBin, routeDate]);
+  }, [stops, todayBinsByCustomer, binOpportunityByCustomerBin, routeDate, mapsReady]);
 
   async function addCustomerToRoute(customerId: string) {
     if (!routeDay) return;
@@ -882,6 +881,7 @@ export default function KortPage() {
     if (exists) return;
 
     const nextIndex = stops.length;
+    const plannedBins = todayBinsByCustomer[customerId] ?? [];
 
     const { data, error } = await supabase
       .from("route_stops")
@@ -890,8 +890,9 @@ export default function KortPage() {
         customer_id: customerId,
         order_index: nextIndex,
         status: "planned",
+        planned_bin_types: plannedBins,
       })
-      .select("id,route_day_id,customer_id,order_index,status,done_at,note")
+      .select("id,route_day_id,customer_id,order_index,status,done_at,note,planned_bin_types")
       .single();
 
     if (error) throw error;
@@ -909,25 +910,37 @@ export default function KortPage() {
   }
 
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
-    const { data: bins, error: binsErr } = await supabase
-      .from("customer_bins")
-      .select("bin_type")
-      .eq("customer_id", stop.customer_id);
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
 
-    if (binsErr) throw binsErr;
+    if (userErr) throw userErr;
+    if (!user) throw new Error("Ingen bruger logget ind");
 
-    const rows = ((bins ?? []) as Array<{ bin_type: string | null }>)
-      .filter((b) => !!b.bin_type)
-      .map((b) => ({
-        customer_id: stop.customer_id,
-        route_stop_id: stop.id,
-        bin_type: b.bin_type as string,
-        status,
-        serviced_at: new Date().toISOString(),
-        note: stop.note ?? null,
-      }));
+    const displayName =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email ||
+      "Ukendt bruger";
 
-    if (rows.length === 0) return;
+    const plannedBins = Array.isArray(stop.planned_bin_types)
+      ? stop.planned_bin_types.filter(Boolean)
+      : [];
+
+    if (plannedBins.length === 0) return;
+
+    const rows = plannedBins.map((binType) => ({
+      customer_id: stop.customer_id,
+      route_stop_id: stop.id,
+      bin_type: binType,
+      status,
+      serviced_at: new Date().toISOString(),
+      note: stop.note ?? null,
+      image_path: null,
+      serviced_by_user_id: user.id,
+      serviced_by_name: displayName,
+    }));
 
     const { error: histErr } = await supabase.from("service_history").insert(rows);
     if (histErr) throw histErr;
@@ -1082,7 +1095,10 @@ export default function KortPage() {
       let addedAny = false;
 
       for (const cid of eligibleIds) {
-        if (!stops.some((s) => s.customer_id === cid)) {
+        const plannedBins = binsMap[cid] ?? [];
+        const existingStop = stops.find((s) => s.customer_id === cid);
+
+        if (!existingStop) {
           const { data: inserted, error: insErr } = await supabase
             .from("route_stops")
             .insert({
@@ -1090,8 +1106,9 @@ export default function KortPage() {
               customer_id: cid,
               order_index: nextIndex,
               status: "planned",
+              planned_bin_types: plannedBins,
             })
-            .select("id,route_day_id,customer_id,order_index,status,done_at,note")
+            .select("id,route_day_id,customer_id,order_index,status,done_at,note,planned_bin_types")
             .single();
 
           if (insErr) throw insErr;
@@ -1101,6 +1118,19 @@ export default function KortPage() {
 
           nextIndex += 1;
           addedAny = true;
+        } else {
+          const { error: updErr } = await supabase
+            .from("route_stops")
+            .update({ planned_bin_types: plannedBins })
+            .eq("id", existingStop.id);
+
+          if (updErr) throw updErr;
+
+          setStops((prev) =>
+            prev.map((s) =>
+              s.id === existingStop.id ? { ...s, planned_bin_types: plannedBins } : s
+            )
+          );
         }
       }
 
@@ -1415,7 +1445,9 @@ export default function KortPage() {
             {sortedStops.map((s, i) => {
               const c = s.customer;
               const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
-              const todays = todayBinsByCustomer[s.customer_id] ?? [];
+              const todays = Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
+                ? s.planned_bin_types
+                : todayBinsByCustomer[s.customer_id] ?? [];
 
               return (
                 <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
