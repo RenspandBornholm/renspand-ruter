@@ -1525,20 +1525,23 @@ export default function KortPage() {
     </span>
 
     <button
-      onClick={() => openSmsToCustomer(c)}
-      style={{
-        padding: "6px 10px",
-        borderRadius: 10,
-        border: "1px solid #4ea1ff",
-        background: "#101010",
-        color: "#dbeeff",
-        cursor: "pointer",
-        fontWeight: 800,
-        fontSize: 12,
-      }}
-    >
-      📩 SMS
-    </button>
+  onClick={() => c && openSmsToCustomer(c)}
+  style={{
+    padding: "8px 14px",
+    borderRadius: 14,
+    border: "1px solid #2ecc71",
+    background: "rgba(46,204,113,0.12)",
+    color: "#dff7e8",
+    cursor: "pointer",
+    fontWeight: 900,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 13,
+  }}
+>
+  💬 SMS
+</button>
   </div>
 ) : (
   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
@@ -1612,11 +1615,11 @@ export default function KortPage() {
                     </div>
                   ) : null}
 
-                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                     <button
                       onClick={() => setStopNote(s.id).catch((e) => setError(String(e?.message ?? e)))}
                       style={{
-                        padding: "8px 10px",
+                        padding: "8px 14px",
                         borderRadius: 12,
                         border: "1px solid #333",
                         background: "#101010",
@@ -1629,7 +1632,7 @@ export default function KortPage() {
 <button
   onClick={() => c && openSmsToCustomer(c)}
   style={{
-    padding: "8px 10px",
+    padding: "8px 14px",
     borderRadius: 12,
     border: "1px solid #4ea1ff",
     background: "#101010",
@@ -1653,7 +1656,7 @@ export default function KortPage() {
                         }
                       }}
                       style={{
-                        padding: "8px 10px",
+                        padding: "8px 14px",
                         borderRadius: 12,
                         border: "1px solid #2ecc71",
                         background: s.status === "done" ? "#0f2a1b" : "#101010",
@@ -1675,7 +1678,7 @@ export default function KortPage() {
                         }
                       }}
                       style={{
-                        padding: "8px 10px",
+                        padding: "8px 14px",
                         borderRadius: 12,
                         border: "1px solid #ff4d4f",
                         background: s.status === "skipped" ? "#2a0a0a" : "#101010",
@@ -1690,7 +1693,7 @@ export default function KortPage() {
                     <button
                       onClick={() => updateStop(s.id, { status: "planned", done_at: null }).catch((e) => setError(String(e?.message ?? e)))}
                       style={{
-                        padding: "8px 10px",
+                        padding: "8px 14px",
                         borderRadius: 12,
                         border: "1px solid #444",
                         background: "#101010",
@@ -1706,7 +1709,7 @@ export default function KortPage() {
                       onClick={() => removeStop(s.id).catch((e) => setError(String(e?.message ?? e)))}
                       style={{
                         marginLeft: "auto",
-                        padding: "8px 10px",
+                        padding: "8px 14px",
                         borderRadius: 12,
                         border: "1px solid #444",
                         background: "#101010",
