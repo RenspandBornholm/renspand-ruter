@@ -1524,25 +1524,7 @@ export default function KortPage() {
       <b>Tlf:</b> {c.phone}
     </span>
 
-    <button
-  onClick={() => c && openSmsToCustomer(c)}
-  style={{
-    padding: "8px 14px",
-    borderRadius: 14,
-    border: "1px solid #2ecc71",
-    background: "rgba(46,204,113,0.12)",
-    color: "#dff7e8",
-    cursor: "pointer",
-    fontWeight: 900,
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 13,
-  }}
->
-  💬 SMS
-</button>
-  </div>
+      </div>
 ) : (
   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
     <b>Tlf:</b> mangler
