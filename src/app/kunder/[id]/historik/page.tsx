@@ -128,49 +128,78 @@ export default function KundeHistorikPage() {
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
 
   async function deleteHistory() {
-    if (!customerId) return;
+  if (!customerId) return;
 
-    const confirmDelete = confirm(
-      "Er du sikker på du vil slette hele historikken på denne kunde?"
-    );
+  const confirmDelete = confirm(
+    "Er du sikker på du vil slette hele historikken og dokumentationen på denne kunde?"
+  );
 
-    if (!confirmDelete) return;
+  if (!confirmDelete) return;
 
-    try {
-      const { data: rows, error: fetchErr } = await supabase
-        .from("service_history")
-        .select("image_path")
-        .eq("customer_id", customerId);
+  try {
+    // 1) hent billeder fra service_history
+    const { data: historyRows, error: historyFetchErr } = await supabase
+      .from("service_history")
+      .select("image_path")
+      .eq("customer_id", customerId);
 
-      if (fetchErr) throw fetchErr;
+    if (historyFetchErr) throw historyFetchErr;
 
-      const paths =
-        rows
-          ?.map((r) => r.image_path)
-          .filter((p): p is string => !!p) ?? [];
+    // 2) hent billeder fra route_stops
+    const { data: stopRows, error: stopFetchErr } = await supabase
+      .from("route_stops")
+      .select("id,note_image_path")
+      .eq("customer_id", customerId);
 
-      if (paths.length > 0) {
-        const { error: storageErr } = await supabase.storage
-          .from("route-notes")
-          .remove(paths);
+    if (stopFetchErr) throw stopFetchErr;
 
-        if (storageErr) throw storageErr;
-      }
+    const historyPaths =
+      historyRows
+        ?.map((r) => r.image_path)
+        .filter((p): p is string => !!p) ?? [];
 
-      const { error: deleteErr } = await supabase
-        .from("service_history")
-        .delete()
-        .eq("customer_id", customerId);
+    const stopPaths =
+      stopRows
+        ?.map((r) => r.note_image_path)
+        .filter((p): p is string => !!p) ?? [];
 
-      if (deleteErr) throw deleteErr;
+    const allPaths = Array.from(new Set([...historyPaths, ...stopPaths]));
 
-      setHistory([]);
-      setSelectedImageUrl(null);
-    } catch (err) {
-      console.error(err);
-      alert("Kunne ikke slette historik korrekt");
+    // 3) slet billeder fra storage
+    if (allPaths.length > 0) {
+      const { error: storageErr } = await supabase.storage
+        .from("route-notes")
+        .remove(allPaths);
+
+      if (storageErr) throw storageErr;
     }
+
+    // 4) nulstil dokumentation på route_stops
+    const { error: resetStopsErr } = await supabase
+      .from("route_stops")
+      .update({
+        note: null,
+        note_image_path: null,
+      })
+      .eq("customer_id", customerId);
+
+    if (resetStopsErr) throw resetStopsErr;
+
+    // 5) slet historik
+    const { error: deleteHistoryErr } = await supabase
+      .from("service_history")
+      .delete()
+      .eq("customer_id", customerId);
+
+    if (deleteHistoryErr) throw deleteHistoryErr;
+
+    setHistory([]);
+    setSelectedImageUrl(null);
+  } catch (err) {
+    console.error(err);
+    alert("Kunne ikke slette historik og dokumentation korrekt");
   }
+}
 
   useEffect(() => {
     (async () => {
