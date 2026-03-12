@@ -297,8 +297,7 @@ function openSmsToCustomer(customer: Customer) {
   const cleanPhone = rawPhone.replace(/\s+/g, "");
 
   const message =
-    "Hej, vær obs på at vi i morgen kommer og renser din/dine skraldespand(e). Undgå gerne at smide affald i den/dem inden. Mvh RenSpand Bornholm 🧼
-";
+    "Hej, vær obs på at vi i morgen kommer og renser din/dine skraldespand(e). Undgå gerne at smide affald i den/dem inden. Mvh RenSpand Bornholm 🧼";
 
   const smsUrl = `sms:${cleanPhone}?body=${encodeURIComponent(message)}`;
 
