@@ -286,6 +286,24 @@ function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string 
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function openSmsToCustomer(customer: Customer) {
+  const rawPhone = customer.phone?.trim();
+
+  if (!rawPhone) {
+    alert("Denne kunde mangler telefonnummer.");
+    return;
+  }
+
+  const cleanPhone = rawPhone.replace(/\s+/g, "");
+
+  const message =
+    "Hej, vær obs på at vi i morgen kommer og renser din/dine skraldespand(e). Undgå gerne at smide affald i den/dem inden. Mvh RenSpand Bornholm";
+
+  const smsUrl = `sms:${cleanPhone}?body=${encodeURIComponent(message)}`;
+
+  window.location.href = smsUrl;
+}
+
 function upcomingRouteStyle(row: UpcomingRouteRow, isActive: boolean): React.CSSProperties {
   if (isActive) {
     return {
