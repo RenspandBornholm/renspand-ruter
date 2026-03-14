@@ -45,6 +45,7 @@ type BinRow = {
   pickup_day: string | null;
   week_group: string | null;
   frequency_months: number | null;
+  is_active?: boolean | null;
 };
 
 type PickupRow = {
@@ -832,7 +833,7 @@ export default function KortPage() {
 
         const { data, error } = await supabase
           .from("customer_bins")
-          .select("customer_id,bin_type,pickup_day,week_group,frequency_months")
+          .select("customer_id,bin_type,pickup_day,week_group,frequency_months,is_active")
           .eq("customer_id", c.id);
 
         let planHtml = "";
@@ -848,11 +849,12 @@ export default function KortPage() {
                 const freq = r.frequency_months ? `${r.frequency_months} md.` : "—";
                 const day = r.pickup_day ?? "—";
                 const wg = weekGroupLabel(r.week_group);
+                const activeText = r.is_active === false ? "I bero" : "Aktiv";
                 return `
                   <div style="border:1px solid #e6e6e6;border-radius:10px;padding:8px 10px;margin-top:8px;">
                     <div style="font-weight:900;">${binTypeLabel(r.bin_type)}</div>
                     <div style="font-size:13px;opacity:.9;margin-top:2px;">
-                      Dag: <b>${day}</b> • Uger: <b>${wg}</b> • Frekvens: <b>${freq}</b>
+                      Dag: <b>${day}</b> • Uger: <b>${wg}</b> • Frekvens: <b>${freq}</b> • Status: <b>${activeText}</b>
                     </div>
                   </div>
                 `;
@@ -927,6 +929,33 @@ export default function KortPage() {
     if (error) throw error;
     setStops((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     await loadUpcomingRoutes(upcomingBaseDate);
+  }
+
+  async function deactivateSingleCustomerPlannedBins(stop: RouteStop) {
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("id,service_type")
+      .eq("id", stop.customer_id)
+      .single();
+
+    if (customerError) throw customerError;
+    if (!customer) return;
+
+    if ((customer as any).service_type !== "single") return;
+
+    const plannedBins = Array.isArray(stop.planned_bin_types)
+      ? stop.planned_bin_types.filter(Boolean)
+      : [];
+
+    if (plannedBins.length === 0) return;
+
+    const { error: updateError } = await supabase
+      .from("customer_bins")
+      .update({ is_active: false })
+      .eq("customer_id", stop.customer_id)
+      .in("bin_type", plannedBins);
+
+    if (updateError) throw updateError;
   }
 
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
@@ -1013,7 +1042,12 @@ export default function KortPage() {
 
       const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
 
-      const stopsWithCoords = sortedStops.filter(
+      const lockedStops = sortedStops.filter((s) => s.status !== "planned");
+      const plannedStops = sortedStops.filter((s) => s.status === "planned");
+
+      if (plannedStops.length < 2) return;
+
+      const plannedWithCoords = plannedStops.filter(
         (s) =>
           s.customer?.lat != null &&
           s.customer?.lng != null &&
@@ -1021,7 +1055,7 @@ export default function KortPage() {
           Number.isFinite(s.customer.lng)
       );
 
-      const stopsWithoutCoords = sortedStops.filter(
+      const plannedWithoutCoords = plannedStops.filter(
         (s) =>
           s.customer?.lat == null ||
           s.customer?.lng == null ||
@@ -1029,12 +1063,9 @@ export default function KortPage() {
           !Number.isFinite(s.customer.lng)
       );
 
-      if (stopsWithCoords.length < 2) {
-        setError("Der er ikke nok stops med koordinater til at optimere ruten.");
-        return;
-      }
+      if (plannedWithCoords.length < 2) return;
 
-      const remaining = [...stopsWithCoords];
+      const remaining = [...plannedWithCoords];
       const greedyRoute: RouteStop[] = [];
 
       let currentLat = HQ.lat;
@@ -1064,15 +1095,31 @@ export default function KortPage() {
       }
 
       const improvedRoute = twoOpt(greedyRoute, HQ);
-      const finalStops = [...improvedRoute, ...stopsWithoutCoords];
+      const reorderedPlanned = [...improvedRoute, ...plannedWithoutCoords];
 
-      await persistStopOrder(finalStops);
+      const finalStops = [...lockedStops, ...reorderedPlanned].map((stop, index) => ({
+        ...stop,
+        order_index: index,
+      }));
+
+      for (const stop of finalStops) {
+        const { error } = await supabase
+          .from("route_stops")
+          .update({ order_index: stop.order_index })
+          .eq("id", stop.id);
+
+        if (error) throw error;
+      }
+
+      setStops(finalStops);
+      await loadUpcomingRoutes(upcomingBaseDate);
     } catch (e: any) {
       setError(String(e?.message ?? e));
     } finally {
       setOptimizing(false);
     }
   }
+
   async function suggestCustomersForDate() {
     try {
       setError(null);
@@ -1092,7 +1139,11 @@ export default function KortPage() {
 
       if (dErr) throw dErr;
 
-      const rows = (dateRows ?? []) as Array<{ customer_id: string; bin_type: string; pickup_date: string }>;
+      const rows = (dateRows ?? []) as Array<{
+        customer_id: string;
+        bin_type: string;
+        pickup_date: string;
+      }>;
 
       if (rows.length === 0) {
         setTodayBinsByCustomer({});
@@ -1100,14 +1151,44 @@ export default function KortPage() {
         return;
       }
 
+      const candidateCustomerIds = Array.from(new Set(rows.map((r) => r.customer_id)));
+
+      const { data: activeBinsRows, error: activeBinsErr } = await supabase
+        .from("customer_bins")
+        .select("customer_id,bin_type,is_active")
+        .in("customer_id", candidateCustomerIds)
+        .eq("is_active", true);
+
+      if (activeBinsErr) throw activeBinsErr;
+
+      const activeBinMap: Record<string, string[]> = {};
+      for (const row of (activeBinsRows ?? []) as Array<{ customer_id: string; bin_type: string; is_active: boolean }>) {
+        (activeBinMap[row.customer_id] ||= []);
+        if (!activeBinMap[row.customer_id].includes(row.bin_type)) {
+          activeBinMap[row.customer_id].push(row.bin_type);
+        }
+      }
+
       const binsMap: Record<string, string[]> = {};
       for (const r of rows) {
+        const activeTypesForCustomer = activeBinMap[r.customer_id] ?? [];
+        if (!activeTypesForCustomer.includes(r.bin_type)) continue;
+
         (binsMap[r.customer_id] ||= []);
-        if (!binsMap[r.customer_id].includes(r.bin_type)) binsMap[r.customer_id].push(r.bin_type);
+        if (!binsMap[r.customer_id].includes(r.bin_type)) {
+          binsMap[r.customer_id].push(r.bin_type);
+        }
       }
-      setTodayBinsByCustomer(binsMap);
 
       const eligibleIds = Object.keys(binsMap);
+
+      if (eligibleIds.length === 0) {
+        setTodayBinsByCustomer({});
+        setError("Ingen aktive spande klar til rengøring på den valgte dag.");
+        return;
+      }
+
+      setTodayBinsByCustomer(binsMap);
       setAdding(true);
 
       let nextIndex = stops.length;
@@ -1464,9 +1545,10 @@ export default function KortPage() {
             {sortedStops.map((s, i) => {
               const c = s.customer;
               const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
-              const todays = Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
-                ? s.planned_bin_types
-                : todayBinsByCustomer[s.customer_id] ?? [];
+              const todays =
+                Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
+                  ? s.planned_bin_types
+                  : todayBinsByCustomer[s.customer_id] ?? [];
 
               return (
                 <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
@@ -1514,47 +1596,46 @@ export default function KortPage() {
                   </div>
 
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-  {(c?.address ?? "").trim()} {c?.city ? `, ${c.city}` : ""}
-  {!c?.lat || !c?.lng ? " • (mangler koordinater)" : ""}
-</div>
+                    {(c?.address ?? "").trim()} {c?.city ? `, ${c.city}` : ""}
+                    {!c?.lat || !c?.lng ? " • (mangler koordinater)" : ""}
+                  </div>
 
-{c?.phone ? (
-  <div
-    style={{
-      marginTop: 6,
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap",
-      alignItems: "center",
-    }}
-  >
-    <span style={{ fontSize: 12, opacity: 0.9 }}>
-      <b>Tlf:</b> {c.phone}
-    </span>
+                  {c?.phone ? (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span style={{ fontSize: 12, opacity: 0.9 }}>
+                        <b>Tlf:</b> {c.phone}
+                      </span>
 
-    <button
-      onClick={() => openSmsToCustomer(c)}
-      style={{
-        padding: "6px 10px",
-        borderRadius: 10,
-        border: "1px solid #4ea1ff",
-        background: "#101010",
-        color: "#dbeeff",
-        cursor: "pointer",
-        fontWeight: 800,
-        fontSize: 12,
-      }}
-    >
-      📩 SMS
-    </button>
-  </div>
-) : (
-  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
-    <b>Tlf:</b> mangler
-  </div>
-)}
+                      <button
+                        onClick={() => openSmsToCustomer(c)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 10,
+                          border: "1px solid #4ea1ff",
+                          background: "#101010",
+                          color: "#dbeeff",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                          fontSize: 12,
+                        }}
+                      >
+                        📩 SMS
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
+                      <b>Tlf:</b> mangler
+                    </div>
+                  )}
 
-      
                   {todays.length ? (
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {todays.map((bt) => {
@@ -1636,15 +1717,17 @@ export default function KortPage() {
                       }}
                     >
                       Note
-
                     </button>
 
                     <button
                       onClick={async () => {
                         try {
                           const doneAt = new Date().toISOString();
+                          const updatedStop: RouteStop = { ...s, status: "done", done_at: doneAt };
+
                           await updateStop(s.id, { status: "done", done_at: doneAt });
-                          await writeServiceHistory({ ...s, status: "done", done_at: doneAt }, "done");
+                          await deactivateSingleCustomerPlannedBins(updatedStop);
+                          await writeServiceHistory(updatedStop, "done");
                         } catch (e: any) {
                           setError(String(e?.message ?? e));
                         }

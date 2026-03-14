@@ -225,6 +225,33 @@ export default function NaestePage() {
     if (histErr) throw histErr;
   }
 
+  async function deactivateSingleCustomerPlannedBins(stop: RouteStop) {
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("id,service_type")
+      .eq("id", stop.customer_id)
+      .single();
+
+    if (customerError) throw customerError;
+    if (!customer) return;
+
+    if ((customer as any).service_type !== "single") return;
+
+    const plannedBins = Array.isArray(stop.planned_bin_types)
+      ? stop.planned_bin_types.filter(Boolean)
+      : [];
+
+    if (plannedBins.length === 0) return;
+
+    const { error: updateError } = await supabase
+      .from("customer_bins")
+      .update({ is_active: false })
+      .eq("customer_id", stop.customer_id)
+      .in("bin_type", plannedBins);
+
+    if (updateError) throw updateError;
+  }
+
   useEffect(() => {
     (async () => {
       try {
@@ -377,27 +404,32 @@ export default function NaestePage() {
 
       if (status === "done") {
         const doneAt = new Date().toISOString();
+        const updatedStop: RouteStop = {
+          ...current,
+          status: "done",
+          done_at: doneAt,
+        };
 
         await updateStop(current.id, {
           status: "done",
           done_at: doneAt,
         });
 
-        await writeServiceHistory(
-          { ...current, status: "done", done_at: doneAt },
-          "done"
-        );
+        await deactivateSingleCustomerPlannedBins(updatedStop);
+        await writeServiceHistory(updatedStop, "done");
 
         setShowSuccessOverlay(true);
         await sleep(1200);
         setShowSuccessOverlay(false);
       } else {
-        await updateStop(current.id, { status: "skipped", done_at: null });
+        const updatedStop: RouteStop = {
+          ...current,
+          status: "skipped",
+          done_at: null,
+        };
 
-        await writeServiceHistory(
-          { ...current, status: "skipped", done_at: null },
-          "skipped"
-        );
+        await updateStop(current.id, { status: "skipped", done_at: null });
+        await writeServiceHistory(updatedStop, "skipped");
       }
 
       const nextPlanned = findNextPlannedIndex(idx);

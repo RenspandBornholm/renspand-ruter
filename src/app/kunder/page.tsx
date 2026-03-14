@@ -30,6 +30,7 @@ type BinRow = {
   pickup_day: string | null;
   week_group: string | null;
   frequency_months: number | null;
+  is_active: boolean | null;
 };
 
 type PickupRow = {
@@ -314,7 +315,7 @@ export default function KunderPage() {
 
     const { data: bData, error: bErr } = await supabase
       .from("customer_bins")
-      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months")
+      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months,is_active")
       .in("customer_id", ids);
 
     if (bErr) {
@@ -506,6 +507,46 @@ export default function KunderPage() {
     router.push("/login");
   }
 
+  async function reactivateBin(binId: string) {
+    try {
+      setError(null);
+
+      const { error } = await supabase
+        .from("customer_bins")
+        .update({ is_active: true })
+        .eq("id", binId);
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      await loadCustomers();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    }
+  }
+
+  async function deactivateBin(binId: string) {
+    try {
+      setError(null);
+
+      const { error } = await supabase
+        .from("customer_bins")
+        .update({ is_active: false })
+        .eq("id", binId);
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      await loadCustomers();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    }
+  }
+
   async function saveCustomer() {
     setError(null);
 
@@ -548,6 +589,7 @@ export default function KunderPage() {
         pickup_day: "Man",
         week_group: "",
         frequency_months: serviceType === "subscription" ? binSettings[bin].frequency_months : 1,
+        is_active: true,
       }));
 
       const { error: binsErr } = await supabase.from("customer_bins").insert(binRows);
@@ -786,10 +828,12 @@ export default function KunderPage() {
             <div style={{ display: "grid", gap: 10 }}>
               {bins.map((b) => {
                 const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
+                const isActive = b.is_active !== false;
+                const isSingle = service === "single";
 
                 return (
                   <div key={b.id} style={styles.binLine}>
-                    <div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontWeight: 900 }}>
                         {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
                         <span style={{ opacity: 0.85, fontWeight: 500 }}>
@@ -798,8 +842,20 @@ export default function KunderPage() {
                         </span>
                       </div>
 
-                      <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span
+                          style={{
+                            ...styles.pill,
+                            border: isActive ? "1px solid #2ecc71" : "1px solid #f1c40f",
+                            background: isActive ? "rgba(46,204,113,0.08)" : "rgba(241,196,15,0.10)",
+                            color: isActive ? "#dff7e8" : "#fff0b3",
+                          }}
+                        >
+                          {isActive ? "Aktiv" : "I bero"}
+                        </span>
+
                         {renderBinStatus(c.id, b.bin_type)}
+
                         {next ? (
                           <span style={styles.pill}>BOFA næste: {formatYMDFromISO(next)}</span>
                         ) : (
@@ -808,9 +864,43 @@ export default function KunderPage() {
                       </div>
                     </div>
 
-                    <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
-                      Importér
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
+                        Importér
+                      </button>
+
+                      {isSingle && !isActive ? (
+                        <button
+                          onClick={() => reactivateBin(b.id)}
+                          style={{
+                            ...styles.smallBtn,
+                            border: "1px solid #2ecc71",
+                            background: "#0f2a1b",
+                            color: "#dff7e8",
+                            marginLeft: 0,
+                            fontWeight: 900,
+                          }}
+                        >
+                          Genaktivér enkelt vask
+                        </button>
+                      ) : null}
+
+                      {isSingle && isActive ? (
+                        <button
+                          onClick={() => deactivateBin(b.id)}
+                          style={{
+                            ...styles.smallBtn,
+                            border: "1px solid #f1c40f",
+                            background: "#2a230a",
+                            color: "#fff0b3",
+                            marginLeft: 0,
+                            fontWeight: 900,
+                          }}
+                        >
+                          Sæt i bero
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
@@ -1414,6 +1504,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #262626",
     borderRadius: 12,
     background: "#141414",
+    flexWrap: "wrap",
   },
   customerCardDesktop: {
     border: "1px solid #2b2b2b",
