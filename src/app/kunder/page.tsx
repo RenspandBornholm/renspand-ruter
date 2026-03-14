@@ -69,6 +69,17 @@ type CustomerDocInfo = {
   routeDate: string | null;
 };
 
+type GroupTheme = {
+  icon: string;
+  label: string;
+  border: string;
+  bg: string;
+  glow: string;
+  chipBg: string;
+  chipBorder: string;
+  chipColor: string;
+};
+
 const BIN_LABEL: Record<BinType, string> = {
   madaffald: "Madaffald",
   rest_plast: "Rest + plast",
@@ -84,6 +95,49 @@ const BIN_ICON: Record<BinType, string> = {
 };
 
 const FREQS: Freq[] = [1, 2, 3, 6];
+
+const GROUP_THEMES: Record<string, GroupTheme> = {
+  private_single: {
+    icon: "🏠",
+    label: "Privat · Enkelt",
+    border: "#cfcfcf",
+    bg: "rgba(255,255,255,0.03)",
+    glow: "rgba(255,255,255,0.08)",
+    chipBg: "rgba(255,255,255,0.06)",
+    chipBorder: "#666",
+    chipColor: "#f3f3f3",
+  },
+  private_sub: {
+    icon: "🔁",
+    label: "Privat · Abonnement",
+    border: "#2ecc71",
+    bg: "rgba(46,204,113,0.06)",
+    glow: "rgba(46,204,113,0.10)",
+    chipBg: "rgba(46,204,113,0.10)",
+    chipBorder: "#2ecc71",
+    chipColor: "#dff7e8",
+  },
+  business_single: {
+    icon: "🏢",
+    label: "Erhverv · Enkelt",
+    border: "#4ea1ff",
+    bg: "rgba(78,161,255,0.06)",
+    glow: "rgba(78,161,255,0.10)",
+    chipBg: "rgba(78,161,255,0.10)",
+    chipBorder: "#4ea1ff",
+    chipColor: "#dbeeff",
+  },
+  business_sub: {
+    icon: "📅",
+    label: "Erhverv · Abonnement",
+    border: "#b57cff",
+    bg: "rgba(181,124,255,0.07)",
+    glow: "rgba(181,124,255,0.10)",
+    chipBg: "rgba(181,124,255,0.12)",
+    chipBorder: "#b57cff",
+    chipColor: "#f0e2ff",
+  },
+};
 
 function formatYMDFromISO(iso: string) {
   const [y, m, d] = iso.slice(0, 10).split("-");
@@ -199,6 +253,28 @@ function getRouteNotePublicUrl(path: string | null | undefined) {
   if (!path) return null;
   const { data } = supabase.storage.from("route-notes").getPublicUrl(path);
   return data.publicUrl;
+}
+
+function getCustomerTypeLabel(service: ServiceType) {
+  return service === "subscription" ? "Abonnement" : "Enkelt";
+}
+
+function getCustomerTypeChipStyle(service: ServiceType): React.CSSProperties {
+  if (service === "subscription") {
+    return {
+      ...styles.mobilePill,
+      border: "1px solid #2ecc71",
+      background: "rgba(46,204,113,0.12)",
+      color: "#dff7e8",
+    };
+  }
+
+  return {
+    ...styles.mobilePill,
+    border: "1px solid #777",
+    background: "rgba(255,255,255,0.05)",
+    color: "#f3f3f3",
+  };
 }
 
 export default function KunderPage() {
@@ -941,7 +1017,7 @@ export default function KunderPage() {
 
                     <div style={{ fontWeight: 900, fontSize: 22 }}>{c.name}</div>
 
-                    <span style={styles.mobilePill}>{service === "subscription" ? "Abonnement" : "Enkelt"}</span>
+                    <span style={getCustomerTypeChipStyle(service)}>{getCustomerTypeLabel(service)}</span>
                   </div>
 
                   <div style={{ marginTop: 6, opacity: 0.88 }}>
@@ -1029,7 +1105,7 @@ export default function KunderPage() {
                   </div>
                 </div>
 
-                <div style={styles.mobilePill}>{service === "subscription" ? "Abonnement" : "Enkelt"}</div>
+                <div style={getCustomerTypeChipStyle(service)}>{getCustomerTypeLabel(service)}</div>
               </div>
 
               <div style={{ marginTop: 10 }}>
@@ -1075,6 +1151,53 @@ export default function KunderPage() {
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  function renderGroupCard(groupKey: keyof typeof GROUP_THEMES, list: CustomerRow[]) {
+    const theme = GROUP_THEMES[groupKey];
+
+    return (
+      <div
+        style={{
+          ...styles.groupCard,
+          border: `1px solid ${theme.glow}`,
+          background: theme.bg,
+          boxShadow: `inset 0 1px 0 ${theme.glow}`,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: 4,
+            background: theme.border,
+            borderRadius: 999,
+            marginBottom: 14,
+          }}
+        />
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <div style={{ fontSize: 22, lineHeight: 1 }}>{theme.icon}</div>
+
+          <div style={{ fontWeight: 900, fontSize: 22, color: "#fff" }}>{theme.label}</div>
+
+          <span
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${theme.chipBorder}`,
+              background: theme.chipBg,
+              color: theme.chipColor,
+              fontSize: 12,
+              fontWeight: 900,
+            }}
+          >
+            {list.length} kunder
+          </span>
+        </div>
+
+        {isMobile ? renderCards(list) : renderTable(list)}
       </div>
     );
   }
@@ -1247,29 +1370,14 @@ export default function KunderPage() {
           </button>
         </div>
 
-        <div style={{ marginTop: 28 }}>
+        <div style={{ marginTop: 32 }}>
           <h2 style={styles.h2}>Kundeliste</h2>
 
-          <div style={{ display: "grid", gap: 14 }}>
-            <div style={styles.groupCard}>
-              <div style={styles.groupTitle}>Privat · Enkelt</div>
-              {isMobile ? renderCards(groups.private_single) : renderTable(groups.private_single)}
-            </div>
-
-            <div style={styles.groupCard}>
-              <div style={styles.groupTitle}>Privat · Abonnement</div>
-              {isMobile ? renderCards(groups.private_sub) : renderTable(groups.private_sub)}
-            </div>
-
-            <div style={styles.groupCard}>
-              <div style={styles.groupTitle}>Erhverv · Enkelt</div>
-              {isMobile ? renderCards(groups.business_single) : renderTable(groups.business_single)}
-            </div>
-
-            <div style={styles.groupCard}>
-              <div style={styles.groupTitle}>Erhverv · Abonnement</div>
-              {isMobile ? renderCards(groups.business_sub) : renderTable(groups.business_sub)}
-            </div>
+          <div style={{ display: "grid", gap: 20 }}>
+            {renderGroupCard("private_single", groups.private_single)}
+            {renderGroupCard("private_sub", groups.private_sub)}
+            {renderGroupCard("business_single", groups.business_single)}
+            {renderGroupCard("business_sub", groups.business_sub)}
           </div>
         </div>
       </div>
@@ -1293,7 +1401,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
   },
   h1: { fontSize: 44, margin: 0, letterSpacing: 0.2 },
-  h2: { fontSize: 26, margin: "0 0 10px" },
+  h2: { fontSize: 28, margin: "0 0 12px" },
   btn: {
     padding: "10px 14px",
     borderRadius: 10,
@@ -1322,12 +1430,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   groupCard: {
     border: "1px solid #2b2b2b",
-    borderRadius: 16,
+    borderRadius: 18,
     background: "rgba(16,16,16,0.75)",
-    padding: 14,
+    padding: 16,
   },
-  groupTitle: { fontWeight: 900, fontSize: 16, marginBottom: 10, opacity: 0.95 },
-
   sectionLabel: { fontWeight: 700, opacity: 0.95, marginBottom: 10 },
   label: { display: "block", marginBottom: 6, opacity: 0.9 },
   input: {
@@ -1421,31 +1527,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
 
-  tableWrap: {
-    border: "1px solid #2b2b2b",
-    borderRadius: 14,
-    overflow: "hidden",
-    background: "#121212",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-  },
-  th: {
-    textAlign: "left",
-    padding: "12px 10px",
-    borderBottom: "1px solid #262626",
-    fontSize: 13,
-    opacity: 0.9,
-    background: "#101010",
-    whiteSpace: "nowrap",
-  },
-  td: {
-    padding: "12px 10px",
-    borderBottom: "1px solid #202020",
-    verticalAlign: "top",
-  },
-
   smallBtn: {
     padding: "8px 10px",
     borderRadius: 10,
@@ -1482,7 +1563,7 @@ const styles: Record<string, React.CSSProperties> = {
   mobileCard: {
     border: "1px solid #2b2b2b",
     borderRadius: 16,
-    background: "rgba(18,18,18,0.8)",
+    background: "rgba(18,18,18,0.86)",
     padding: 14,
   },
   mobilePill: {
