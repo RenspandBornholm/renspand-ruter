@@ -85,7 +85,9 @@ const BIN_ICON: Record<BinType, string> = {
 const FREQS: Freq[] = [1, 2, 3, 6];
 
 function formatYMDFromISO(iso: string) {
-  return iso.slice(0, 10);
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  if (!y || !m || !d) return iso.slice(0, 10);
+  return `${d}-${m}-${y}`;
 }
 
 function toYMD(d: Date) {
@@ -202,6 +204,8 @@ export default function KunderPage() {
   const router = useRouter();
 
   const [isMobile, setIsMobile] = useState(false);
+  const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900);
     check();
@@ -215,8 +219,8 @@ export default function KunderPage() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
-const [phone, setPhone] = useState("");
-const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
 
   const [selectedBins, setSelectedBins] = useState<Record<BinType, boolean>>({
     madaffald: false,
@@ -243,7 +247,9 @@ const [email, setEmail] = useState("");
   const [binsByCustomer, setBinsByCustomer] = useState<Record<string, BinRow[]>>({});
   const [lastDoneByCustomer, setLastDoneByCustomer] = useState<Record<string, string | null>>({});
   const [nextPickupByCustomerBin, setNextPickupByCustomerBin] = useState<Record<string, string | null>>({});
-  const [binOpportunityByCustomerBin, setBinOpportunityByCustomerBin] = useState<Record<string, BinOpportunityInfo>>({});
+  const [binOpportunityByCustomerBin, setBinOpportunityByCustomerBin] = useState<Record<string, BinOpportunityInfo>>(
+    {}
+  );
   const [doneThisCycleByCustomerBin, setDoneThisCycleByCustomerBin] = useState<Record<string, boolean>>({});
   const [latestDocByCustomer, setLatestDocByCustomer] = useState<Record<string, CustomerDocInfo>>({});
 
@@ -254,6 +260,13 @@ const [email, setEmail] = useState("");
     () => (Object.keys(selectedBins) as BinType[]).filter((b) => selectedBins[b]),
     [selectedBins]
   );
+
+  function toggleCustomerExpanded(customerId: string) {
+    setExpandedCustomers((prev) => ({
+      ...prev,
+      [customerId]: !prev[customerId],
+    }));
+  }
 
   function toggleBin(bin: BinType) {
     setSelectedBins((prev) => ({ ...prev, [bin]: !prev[bin] }));
@@ -418,7 +431,7 @@ const [email, setEmail] = useState("");
       const key = `${row.customer_id}__${row.bin_type}`;
       if (doneCycleMap[key]) continue;
 
-      const servicedDate = formatYMDFromISO(row.serviced_at);
+      const servicedDate = row.serviced_at.slice(0, 10);
       const info = opportunityMap[key];
       if (!info) continue;
 
@@ -457,9 +470,7 @@ const [email, setEmail] = useState("");
         .in("id", routeDayIds);
 
       if (!rdErr) {
-        routeDayMap = Object.fromEntries(
-          ((rdData ?? []) as RouteDayMini[]).map((r) => [r.id, r.route_date])
-        );
+        routeDayMap = Object.fromEntries(((rdData ?? []) as RouteDayMini[]).map((r) => [r.id, r.route_date]));
       }
     }
 
@@ -472,9 +483,7 @@ const [email, setEmail] = useState("");
       const shouldReplace =
         !existing ||
         (routeDate ?? "") > (existing.routeDate ?? "") ||
-        ((routeDate ?? "") === (existing.routeDate ?? "") &&
-          !!row.note_image_path &&
-          !existing.note_image_path);
+        ((routeDate ?? "") === (existing.routeDate ?? "") && !!row.note_image_path && !existing.note_image_path);
 
       if (shouldReplace) {
         docMap[row.customer_id] = {
@@ -490,7 +499,6 @@ const [email, setEmail] = useState("");
 
   useEffect(() => {
     loadCustomers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function logout() {
@@ -516,14 +524,14 @@ const [email, setEmail] = useState("");
       const { data: inserted, error: insErr } = await supabase
         .from("customers")
         .insert({
-  name: name.trim(),
-  address: address.trim(),
-  city: city.trim(),
-  phone: phone.trim() || null,
-  email: email.trim() || null,
-  service_type: serviceType,
-  customer_type: customerType,
-})
+          name: name.trim(),
+          address: address.trim(),
+          city: city.trim(),
+          phone: phone.trim() || null,
+          email: email.trim() || null,
+          service_type: serviceType,
+          customer_type: customerType,
+        })
         .select("id")
         .single();
 
@@ -699,7 +707,7 @@ const [email, setEmail] = useState("");
             ...nextDateBadgeStyle,
           }}
         >
-          {info?.nextDate ? `Næste: ${info.nextDate.split("-").reverse().join("-")}` : "Færdig for måneden"}
+          {info?.nextDate ? `Næste: ${formatYMDFromISO(info.nextDate)}` : "Færdig for måneden"}
         </span>
       );
     }
@@ -740,13 +748,11 @@ const [email, setEmail] = useState("");
         }}
       >
         <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.9 }}>
-          Dokumentation{doc.routeDate ? ` · ${doc.routeDate}` : ""}
+          Dokumentation{doc.routeDate ? ` · ${formatYMDFromISO(doc.routeDate)}` : ""}
         </div>
 
         {doc.note ? (
-          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, whiteSpace: "pre-wrap" }}>
-            {doc.note}
-          </div>
+          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, whiteSpace: "pre-wrap" }}>{doc.note}</div>
         ) : null}
 
         {imageUrl ? (
@@ -766,123 +772,135 @@ const [email, setEmail] = useState("");
     );
   }
 
+  function renderExpandedContent(c: CustomerRow, service: ServiceType) {
+    const bins = binsByCustomer[c.id] ?? [];
+
+    return (
+      <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #262626" }}>
+        {renderLatestDocumentation(c.id)}
+
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 800, marginBottom: 8, opacity: 0.9 }}>Spande</div>
+
+          {bins.length ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              {bins.map((b) => {
+                const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
+
+                return (
+                  <div key={b.id} style={styles.binLine}>
+                    <div>
+                      <div style={{ fontWeight: 900 }}>
+                        {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
+                        <span style={{ opacity: 0.85, fontWeight: 500 }}>
+                          {" "}
+                          · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
+                        </span>
+                      </div>
+
+                      <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {renderBinStatus(c.id, b.bin_type)}
+                        {next ? (
+                          <span style={styles.pill}>BOFA næste: {formatYMDFromISO(next)}</span>
+                        ) : (
+                          <span style={{ fontSize: 12, opacity: 0.65 }}>Ingen datoer</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
+                      Importér
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Ingen spande endnu.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   function renderTable(list: CustomerRow[]) {
     if (list.length === 0) return <div style={{ opacity: 0.75, padding: 12 }}>Ingen kunder her endnu.</div>;
 
     return (
-      <div style={styles.tableWrap}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Navn</th>
-              <th style={styles.th}>Adresse</th>
-              <th style={styles.th}>By</th>
-              <th style={styles.th}>Service</th>
-              <th style={styles.th}>Spande</th>
-              <th style={{ ...styles.th, textAlign: "right" }}>Handling</th>
-            </tr>
-          </thead>
+      <div style={{ display: "grid", gap: 12 }}>
+        {list.map((c) => {
+          const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
+          const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
+          const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
+          const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
+          const service = (c.service_type ?? "single") as ServiceType;
+          const isExpanded = !!expandedCustomers[c.id];
 
-          <tbody>
-            {list.map((c) => {
-              const bins = binsByCustomer[c.id] ?? [];
-              const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
-
-              const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
-              const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
-              const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
-
-              const service = (c.service_type ?? "single") as ServiceType;
-
-              return (
-                <tr key={c.id}>
-                  <td style={styles.td}>
-                    <div style={{ fontWeight: 900 }}>{c.name}</div>
-
-                    {lastDoneYMD ? (
-                      <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span style={styles.pill}>Rengjort d. {lastDoneYMD}</span>
-                        {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
-                      </div>
-                    ) : (
-                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
-                    )}
-
-                    {renderLatestDocumentation(c.id)}
-                  </td>
-
-                  <td style={styles.td}>{c.address}</td>
-                  <td style={styles.td}>{c.city}</td>
-                  <td style={styles.td}>{service === "subscription" ? "Abonnement" : "Enkelt"}</td>
-
-                  <td style={styles.td}>
-                    {bins.length ? (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {bins.map((b) => {
-                          const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
-
-                          return (
-                            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                              <div style={{ minWidth: 240 }}>
-                                <b>
-                                  {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
-                                </b>{" "}
-                                <span style={{ opacity: 0.85 }}>
-                                  · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
-                                </span>
-
-                                <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                  {renderBinStatus(c.id, b.bin_type)}
-                                  {next ? (
-                                    <span style={styles.pill}>
-  BOFA næste: {next?.split("-").reverse().join("-")}
-</span>
-                                  ) : (
-                                    <span style={{ fontSize: 12, opacity: 0.65 }}>Ingen datoer</span>
-                                  )}
-                                </div>
-                              </div>
-
-                              <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
-                                Importér
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <span style={{ opacity: 0.7 }}>-</span>
-                    )}
-                  </td>
-
-                  <td style={{ ...styles.td, textAlign: "right", whiteSpace: "nowrap" }}>
+          return (
+            <div key={c.id} style={styles.customerCardDesktop}>
+              <div style={styles.customerHeaderRow}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <button
-                      onClick={() => router.push(`/kunder/${c.id}/historik`)}
-                      style={{ ...styles.smallBtn, marginLeft: 0 }}
+                      type="button"
+                      onClick={() => toggleCustomerExpanded(c.id)}
+                      style={styles.expandBtn}
                     >
-                      {latestDocByCustomer[c.id] ? "Historik 📷" : "Historik"}
+                      {isExpanded ? "▴" : "▾"}
                     </button>
 
-                    <button
-                      onClick={() => geocodeCustomer(c)}
-                      disabled={!c.address || !c.city}
-                      style={{
-                        ...styles.smallBtn,
-                        opacity: !c.address || !c.city ? 0.45 : 1,
-                      }}
-                    >
-                      {hasCoords ? "Opdater koordinater" : "Find koordinater"}
-                    </button>
+                    <div style={{ fontWeight: 900, fontSize: 22 }}>{c.name}</div>
 
-                    <button onClick={() => deleteCustomer(c.id)} style={{ ...styles.smallBtn, ...styles.dangerBtn }}>
-                      Slet
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    <span style={styles.mobilePill}>{service === "subscription" ? "Abonnement" : "Enkelt"}</span>
+                  </div>
+
+                  <div style={{ marginTop: 6, opacity: 0.88 }}>
+                    {c.address}, {c.city}
+                  </div>
+
+                  {lastDoneYMD ? (
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={styles.pill}>Rengjort d. {lastDoneYMD}</span>
+                      {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
+                  )}
+                </div>
+
+                <div style={styles.actionsWrap}>
+                  <button
+                    onClick={() => router.push(`/kunder/${c.id}/historik`)}
+                    style={{ ...styles.smallBtn, marginLeft: 0 }}
+                  >
+                    {latestDocByCustomer[c.id] ? "Historik 📷" : "Historik"}
+                  </button>
+
+                  <button
+                    onClick={() => geocodeCustomer(c)}
+                    disabled={!c.address || !c.city}
+                    style={{
+                      ...styles.smallBtn,
+                      opacity: !c.address || !c.city ? 0.45 : 1,
+                      marginLeft: 0,
+                    }}
+                  >
+                    {hasCoords ? "Opdater koordinater" : "Find koordinater"}
+                  </button>
+
+                  <button
+                    onClick={() => deleteCustomer(c.id)}
+                    style={{ ...styles.smallBtn, ...styles.dangerBtn, marginLeft: 0 }}
+                  >
+                    Slet
+                  </button>
+                </div>
+              </div>
+
+              {isExpanded ? renderExpandedContent(c, service) : null}
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -893,24 +911,35 @@ const [email, setEmail] = useState("");
     return (
       <div style={{ display: "grid", gap: 12 }}>
         {list.map((c) => {
-          const bins = binsByCustomer[c.id] ?? [];
           const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
-
           const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
           const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
           const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
-
           const service = (c.service_type ?? "single") as ServiceType;
+          const isExpanded = !!expandedCustomers[c.id];
 
           return (
             <div key={c.id} style={styles.mobileCard}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ fontWeight: 900, fontSize: 18 }}>{c.name}</div>
-                <div style={styles.mobilePill}>{service === "subscription" ? "Abonnement" : "Enkelt"}</div>
-              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => toggleCustomerExpanded(c.id)}
+                      style={styles.expandBtn}
+                    >
+                      {isExpanded ? "▴" : "▾"}
+                    </button>
 
-              <div style={{ marginTop: 6, opacity: 0.9 }}>
-                {c.address}, {c.city}
+                    <div style={{ fontWeight: 900, fontSize: 18 }}>{c.name}</div>
+                  </div>
+
+                  <div style={{ marginTop: 6, opacity: 0.9 }}>
+                    {c.address}, {c.city}
+                  </div>
+                </div>
+
+                <div style={styles.mobilePill}>{service === "subscription" ? "Abonnement" : "Enkelt"}</div>
               </div>
 
               <div style={{ marginTop: 10 }}>
@@ -921,42 +950,6 @@ const [email, setEmail] = useState("");
                   </div>
                 ) : (
                   <div style={{ fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
-                )}
-              </div>
-
-              {renderLatestDocumentation(c.id)}
-
-              <div style={{ marginTop: 10 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6, opacity: 0.9 }}>Spande</div>
-
-                {bins.length ? (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {bins.map((b) => {
-                      const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
-
-                      return (
-                        <div key={b.id} style={styles.binLine}>
-                          <div>
-                            <div style={{ fontWeight: 900 }}>
-                              {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
-                            </div>
-                            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
-                              {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}{" "}
-                              {next ? `· BOFA næste: ${next.split("-").reverse().join("-")}` : "· Ingen datoer"}
-                            </div>
-
-                            <div style={{ marginTop: 6 }}>{renderBinStatus(c.id, b.bin_type)}</div>
-                          </div>
-
-                          <button onClick={() => importBofaDates(c.id, b.bin_type)} style={styles.importBtn}>
-                            Importér
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>-</div>
                 )}
               </div>
 
@@ -987,6 +980,8 @@ const [email, setEmail] = useState("");
                   Slet
                 </button>
               </div>
+
+              {isExpanded ? renderExpandedContent(c, service) : null}
             </div>
           );
         })}
@@ -1058,56 +1053,56 @@ const [email, setEmail] = useState("");
           </div>
 
           <div style={styles.formGrid}>
-  <div>
-    <label style={styles.label}>Navn</label>
-    <input
-      value={name}
-      onChange={(e) => setName(e.target.value)}
-      placeholder="Fx Jens Hansen"
-      style={styles.input}
-    />
-  </div>
+            <div>
+              <label style={styles.label}>Navn</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Fx Jens Hansen"
+                style={styles.input}
+              />
+            </div>
 
-  <div>
-    <label style={styles.label}>By</label>
-    <input
-      value={city}
-      onChange={(e) => setCity(e.target.value)}
-      placeholder="Fx Rønne"
-      style={styles.input}
-    />
-  </div>
+            <div>
+              <label style={styles.label}>By</label>
+              <input
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder="Fx Rønne"
+                style={styles.input}
+              />
+            </div>
 
-  <div style={{ gridColumn: "1 / -1" }}>
-    <label style={styles.label}>Adresse</label>
-    <input
-      value={address}
-      onChange={(e) => setAddress(e.target.value)}
-      placeholder="Fx Nørregade 10"
-      style={styles.input}
-    />
-  </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={styles.label}>Adresse</label>
+              <input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Fx Nørregade 10"
+                style={styles.input}
+              />
+            </div>
 
-  <div>
-    <label style={styles.label}>Telefonnummer</label>
-    <input
-      value={phone}
-      onChange={(e) => setPhone(e.target.value)}
-      placeholder="Fx 20112233"
-      style={styles.input}
-    />
-  </div>
+            <div>
+              <label style={styles.label}>Telefonnummer</label>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Fx 20112233"
+                style={styles.input}
+              />
+            </div>
 
-  <div>
-    <label style={styles.label}>Email</label>
-    <input
-      value={email}
-      onChange={(e) => setEmail(e.target.value)}
-      placeholder="Fx kunde@mail.dk"
-      style={styles.input}
-    />
-  </div>
-</div>
+            <div>
+              <label style={styles.label}>Email</label>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Fx kunde@mail.dk"
+                style={styles.input}
+              />
+            </div>
+          </div>
 
           <div style={{ marginTop: 14 }}>
             <div style={styles.sectionLabel}>Beholdertype (klik for at vælge)</div>
@@ -1419,5 +1414,37 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #262626",
     borderRadius: 12,
     background: "#141414",
+  },
+  customerCardDesktop: {
+    border: "1px solid #2b2b2b",
+    borderRadius: 16,
+    background: "#121212",
+    padding: 14,
+  },
+  customerHeaderRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  actionsWrap: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  expandBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    border: "1px solid #2f2f2f",
+    background: "#171717",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 18,
+    lineHeight: 1,
   },
 };
