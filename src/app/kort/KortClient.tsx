@@ -1086,10 +1086,21 @@ function pickBestDirection(route: RouteStop[], hq: { lat: number; lng: number })
   const forward = [...route];
   const reversed = [...route].reverse();
 
-  const forwardCost = routeCostFromHQ(forward, hq);
-  const reversedCost = routeCostFromHQ(reversed, hq);
+  const forwardFirstDist = distanceKm(
+    hq.lat,
+    hq.lng,
+    forward[0].customer!.lat!,
+    forward[0].customer!.lng!
+  );
 
-  return forwardCost <= reversedCost ? forward : reversed;
+  const reversedFirstDist = distanceKm(
+    hq.lat,
+    hq.lng,
+    reversed[0].customer!.lat!,
+    reversed[0].customer!.lng!
+  );
+
+  return forwardFirstDist <= reversedFirstDist ? forward : reversed;
 }
 function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
   const n = route.length;
