@@ -1058,7 +1058,31 @@ function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
   const n = route.length;
   if (n <= 1) return [...route];
 
-  const { hqToStop, stopToHq, between } = buildDistanceMatrix(route, hq);
+  const points = route.map((s) => ({
+    lat: s.customer!.lat!,
+    lng: s.customer!.lng!,
+  }));
+
+  const hqToStop = points.map((p) => distanceKm(hq.lat, hq.lng, p.lat, p.lng));
+  const stopToHq = points.map((p) => distanceKm(p.lat, p.lng, hq.lat, hq.lng));
+
+  const between: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
+  const angleFromHq: number[] = points.map((p) =>
+    Math.atan2(p.lat - hq.lat, p.lng - hq.lng)
+  );
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      between[i][j] = distanceKm(points[i].lat, points[i].lng, points[j].lat, points[j].lng);
+    }
+  }
+
+  function angularPenalty(a: number, b: number) {
+    let diff = Math.abs(a - b);
+    if (diff > Math.PI) diff = 2 * Math.PI - diff;
+    return diff;
+  }
 
   const size = 1 << n;
   const dp: number[][] = Array.from({ length: size }, () => Array(n).fill(Infinity));
@@ -1078,7 +1102,13 @@ function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
         if (mask & (1 << next)) continue;
 
         const nextMask = mask | (1 << next);
-        const nextCost = currentCost + between[last][next];
+
+        const distCost = between[last][next];
+
+        const turnPenalty =
+          angularPenalty(angleFromHq[last], angleFromHq[next]) * 8;
+
+        const nextCost = currentCost + distCost + turnPenalty;
 
         if (nextCost < dp[nextMask][next]) {
           dp[nextMask][next] = nextCost;
@@ -1115,7 +1145,6 @@ function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
 
   return order.map((idx) => route[idx]);
 }
-
 function buildNearestNeighbourRoute(
   candidates: RouteStop[],
   startLat: number,
@@ -1155,9 +1184,60 @@ function buildNearestNeighbourRoute(
 function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
   if (route.length <= 1) return [...route];
 
-  const candidates: RouteStop[][] = [];
+  function angleFromHQ(stop: RouteStop) {
+    return Math.atan2(stop.customer!.lat! - hq.lat, stop.customer!.lng! - hq.lng);
+  }
 
-  candidates.push(buildNearestNeighbourRoute(route, hq.lat, hq.lng));
+  function normalizeAngleDiff(a: number, b: number) {
+    let diff = Math.abs(a - b);
+    if (diff > Math.PI) diff = 2 * Math.PI - diff;
+    return diff;
+  }
+
+  function routeCostWithPenalty(stops: RouteStop[]) {
+    let total = 0;
+
+    total += distanceKm(hq.lat, hq.lng, stops[0].customer!.lat!, stops[0].customer!.lng!);
+
+    for (let i = 0; i < stops.length - 1; i++) {
+      const a = stops[i];
+      const b = stops[i + 1];
+
+      total += distanceKm(
+        a.customer!.lat!,
+        a.customer!.lng!,
+        b.customer!.lat!,
+        b.customer!.lng!
+      );
+
+      const anglePenalty = normalizeAngleDiff(angleFromHQ(a), angleFromHQ(b)) * 8;
+      total += anglePenalty;
+    }
+
+    total += distanceKm(
+      stops[stops.length - 1].customer!.lat!,
+      stops[stops.length - 1].customer!.lng!,
+      hq.lat,
+      hq.lng
+    );
+
+    return total;
+  }
+
+  const byAngle = [...route].sort((a, b) => angleFromHQ(a) - angleFromHQ(b));
+  const byAngleReverse = [...byAngle].reverse();
+  const byDistance = [...route].sort((a, b) => {
+    const da = distanceKm(hq.lat, hq.lng, a.customer!.lat!, a.customer!.lng!);
+    const db = distanceKm(hq.lat, hq.lng, b.customer!.lat!, b.customer!.lng!);
+    return da - db;
+  });
+
+  const candidates: RouteStop[][] = [
+    byAngle,
+    byAngleReverse,
+    byDistance,
+    buildNearestNeighbourRoute(route, hq.lat, hq.lng),
+  ];
 
   for (const seed of route) {
     const seeded = [seed, ...route.filter((s) => s.id !== seed.id)];
@@ -1169,16 +1249,20 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
 
     while (remaining.length > 0) {
       let bestIndex = 0;
-      let bestDistance = Infinity;
+      let bestScore = Infinity;
 
       for (let i = 0; i < remaining.length; i++) {
         const stop = remaining[i];
-        const lat = stop.customer!.lat!;
-        const lng = stop.customer!.lng!;
-        const dist = distanceKm(currentLat, currentLng, lat, lng);
+        const dist = distanceKm(currentLat, currentLng, stop.customer!.lat!, stop.customer!.lng!);
 
-        if (dist < bestDistance) {
-          bestDistance = dist;
+        const prevAngle = Math.atan2(currentLat - hq.lat, currentLng - hq.lng);
+        const nextAngle = angleFromHQ(stop);
+        const anglePenalty = normalizeAngleDiff(prevAngle, nextAngle) * 8;
+
+        const score = dist + anglePenalty;
+
+        if (score < bestScore) {
+          bestScore = score;
           bestIndex = i;
         }
       }
@@ -1192,16 +1276,16 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
     candidates.push(built);
   }
 
-  let bestRoute = twoOpt(candidates[0], hq);
-  let bestDistance = routeDistanceKm(bestRoute, hq);
+  let bestRoute = candidates[0];
+  let bestCost = routeCostWithPenalty(bestRoute);
 
   for (let i = 1; i < candidates.length; i++) {
-    const improved = twoOpt(candidates[i], hq);
-    const dist = routeDistanceKm(improved, hq);
+    const candidate = candidates[i];
+    const cost = routeCostWithPenalty(candidate);
 
-    if (dist < bestDistance) {
-      bestDistance = dist;
-      bestRoute = improved;
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestRoute = candidate;
     }
   }
 
