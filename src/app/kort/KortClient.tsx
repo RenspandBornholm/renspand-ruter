@@ -1054,6 +1054,43 @@ function buildDistanceMatrix(route: RouteStop[], hq: { lat: number; lng: number 
   return { hqToStop, stopToHq, between };
 }
 
+function routeCostFromHQ(route: RouteStop[], hq: { lat: number; lng: number }) {
+  if (route.length === 0) return 0;
+
+  let total = 0;
+
+  total += distanceKm(hq.lat, hq.lng, route[0].customer!.lat!, route[0].customer!.lng!);
+
+  for (let i = 0; i < route.length - 1; i++) {
+    total += distanceKm(
+      route[i].customer!.lat!,
+      route[i].customer!.lng!,
+      route[i + 1].customer!.lat!,
+      route[i + 1].customer!.lng!
+    );
+  }
+
+  total += distanceKm(
+    route[route.length - 1].customer!.lat!,
+    route[route.length - 1].customer!.lng!,
+    hq.lat,
+    hq.lng
+  );
+
+  return total;
+}
+
+function pickBestDirection(route: RouteStop[], hq: { lat: number; lng: number }) {
+  if (route.length <= 1) return route;
+
+  const forward = [...route];
+  const reversed = [...route].reverse();
+
+  const forwardCost = routeCostFromHQ(forward, hq);
+  const reversedCost = routeCostFromHQ(reversed, hq);
+
+  return forwardCost <= reversedCost ? forward : reversed;
+}
 function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
   const n = route.length;
   if (n <= 1) return [...route];
@@ -1143,7 +1180,8 @@ function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
 
   order.reverse();
 
-  return order.map((idx) => route[idx]);
+  const bestRoute = order.map((idx) => route[idx]);
+return pickBestDirection(bestRoute, hq);
 }
 function buildNearestNeighbourRoute(
   candidates: RouteStop[],
@@ -1289,7 +1327,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
     }
   }
 
-  return bestRoute;
+  return pickBestDirection(bestRoute, hq);
 }
 
   async function optimizeRoute() {
