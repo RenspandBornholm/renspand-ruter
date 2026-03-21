@@ -1027,99 +1027,258 @@ export default function KortPage() {
 
     await persistStopOrder(moved);
   }
+function buildDistanceMatrix(route: RouteStop[], hq: { lat: number; lng: number }) {
+  const n = route.length;
+  const points = route.map((s) => ({
+    lat: s.customer!.lat!,
+    lng: s.customer!.lng!,
+  }));
 
-  async function optimizeRoute() {
-    try {
-      setError(null);
-      setOptimizing(true);
+  const hqToStop = points.map((p) => distanceKm(hq.lat, hq.lng, p.lat, p.lng));
+  const stopToHq = points.map((p) => distanceKm(p.lat, p.lng, hq.lat, hq.lng));
 
-      if (stops.length < 2) return;
+  const between: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
 
-      const HQ = {
-        lat: 55.10692093390334,
-        lng: 14.822756898314669,
-      };
-
-      const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
-
-      const lockedStops = sortedStops.filter((s) => s.status !== "planned");
-      const plannedStops = sortedStops.filter((s) => s.status === "planned");
-
-      if (plannedStops.length < 2) return;
-
-      const plannedWithCoords = plannedStops.filter(
-        (s) =>
-          s.customer?.lat != null &&
-          s.customer?.lng != null &&
-          Number.isFinite(s.customer.lat) &&
-          Number.isFinite(s.customer.lng)
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      between[i][j] = distanceKm(
+        points[i].lat,
+        points[i].lng,
+        points[j].lat,
+        points[j].lng
       );
-
-      const plannedWithoutCoords = plannedStops.filter(
-        (s) =>
-          s.customer?.lat == null ||
-          s.customer?.lng == null ||
-          !Number.isFinite(s.customer.lat) ||
-          !Number.isFinite(s.customer.lng)
-      );
-
-      if (plannedWithCoords.length < 2) return;
-
-      const remaining = [...plannedWithCoords];
-      const greedyRoute: RouteStop[] = [];
-
-      let currentLat = HQ.lat;
-      let currentLng = HQ.lng;
-
-      while (remaining.length > 0) {
-        let bestIndex = 0;
-        let bestDistance = Infinity;
-
-        for (let i = 0; i < remaining.length; i++) {
-          const stop = remaining[i];
-          const lat = stop.customer!.lat!;
-          const lng = stop.customer!.lng!;
-
-          const dist = distanceKm(currentLat, currentLng, lat, lng);
-
-          if (dist < bestDistance) {
-            bestDistance = dist;
-            bestIndex = i;
-          }
-        }
-
-        const nextStop = remaining.splice(bestIndex, 1)[0];
-        greedyRoute.push(nextStop);
-        currentLat = nextStop.customer!.lat!;
-        currentLng = nextStop.customer!.lng!;
-      }
-
-      const improvedRoute = twoOpt(greedyRoute, HQ);
-      const reorderedPlanned = [...improvedRoute, ...plannedWithoutCoords];
-
-      const finalStops = [...lockedStops, ...reorderedPlanned].map((stop, index) => ({
-        ...stop,
-        order_index: index,
-      }));
-
-      for (const stop of finalStops) {
-        const { error } = await supabase
-          .from("route_stops")
-          .update({ order_index: stop.order_index })
-          .eq("id", stop.id);
-
-        if (error) throw error;
-      }
-
-      setStops(finalStops);
-      await loadUpcomingRoutes(upcomingBaseDate);
-    } catch (e: any) {
-      setError(String(e?.message ?? e));
-    } finally {
-      setOptimizing(false);
     }
   }
 
+  return { hqToStop, stopToHq, between };
+}
+
+function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
+  const n = route.length;
+  if (n <= 1) return [...route];
+
+  const { hqToStop, stopToHq, between } = buildDistanceMatrix(route, hq);
+
+  const size = 1 << n;
+  const dp: number[][] = Array.from({ length: size }, () => Array(n).fill(Infinity));
+  const parent: number[][] = Array.from({ length: size }, () => Array(n).fill(-1));
+
+  for (let i = 0; i < n; i++) {
+    dp[1 << i][i] = hqToStop[i];
+  }
+
+  for (let mask = 0; mask < size; mask++) {
+    for (let last = 0; last < n; last++) {
+      const currentCost = dp[mask][last];
+      if (!Number.isFinite(currentCost)) continue;
+      if ((mask & (1 << last)) === 0) continue;
+
+      for (let next = 0; next < n; next++) {
+        if (mask & (1 << next)) continue;
+
+        const nextMask = mask | (1 << next);
+        const nextCost = currentCost + between[last][next];
+
+        if (nextCost < dp[nextMask][next]) {
+          dp[nextMask][next] = nextCost;
+          parent[nextMask][next] = last;
+        }
+      }
+    }
+  }
+
+  const fullMask = size - 1;
+  let bestLast = 0;
+  let bestTotal = Infinity;
+
+  for (let last = 0; last < n; last++) {
+    const total = dp[fullMask][last] + stopToHq[last];
+    if (total < bestTotal) {
+      bestTotal = total;
+      bestLast = last;
+    }
+  }
+
+  const order: number[] = [];
+  let mask = fullMask;
+  let current = bestLast;
+
+  while (current !== -1) {
+    order.push(current);
+    const prev = parent[mask][current];
+    mask = mask ^ (1 << current);
+    current = prev;
+  }
+
+  order.reverse();
+
+  return order.map((idx) => route[idx]);
+}
+
+function buildNearestNeighbourRoute(
+  candidates: RouteStop[],
+  startLat: number,
+  startLng: number
+) {
+  const remaining = [...candidates];
+  const route: RouteStop[] = [];
+
+  let currentLat = startLat;
+  let currentLng = startLng;
+
+  while (remaining.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const stop = remaining[i];
+      const lat = stop.customer!.lat!;
+      const lng = stop.customer!.lng!;
+      const dist = distanceKm(currentLat, currentLng, lat, lng);
+
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        bestIndex = i;
+      }
+    }
+
+    const nextStop = remaining.splice(bestIndex, 1)[0];
+    route.push(nextStop);
+    currentLat = nextStop.customer!.lat!;
+    currentLng = nextStop.customer!.lng!;
+  }
+
+  return route;
+}
+
+function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
+  if (route.length <= 1) return [...route];
+
+  const candidates: RouteStop[][] = [];
+
+  candidates.push(buildNearestNeighbourRoute(route, hq.lat, hq.lng));
+
+  for (const seed of route) {
+    const seeded = [seed, ...route.filter((s) => s.id !== seed.id)];
+    const built: RouteStop[] = [seed];
+    const remaining = seeded.slice(1);
+
+    let currentLat = seed.customer!.lat!;
+    let currentLng = seed.customer!.lng!;
+
+    while (remaining.length > 0) {
+      let bestIndex = 0;
+      let bestDistance = Infinity;
+
+      for (let i = 0; i < remaining.length; i++) {
+        const stop = remaining[i];
+        const lat = stop.customer!.lat!;
+        const lng = stop.customer!.lng!;
+        const dist = distanceKm(currentLat, currentLng, lat, lng);
+
+        if (dist < bestDistance) {
+          bestDistance = dist;
+          bestIndex = i;
+        }
+      }
+
+      const nextStop = remaining.splice(bestIndex, 1)[0];
+      built.push(nextStop);
+      currentLat = nextStop.customer!.lat!;
+      currentLng = nextStop.customer!.lng!;
+    }
+
+    candidates.push(built);
+  }
+
+  let bestRoute = twoOpt(candidates[0], hq);
+  let bestDistance = routeDistanceKm(bestRoute, hq);
+
+  for (let i = 1; i < candidates.length; i++) {
+    const improved = twoOpt(candidates[i], hq);
+    const dist = routeDistanceKm(improved, hq);
+
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      bestRoute = improved;
+    }
+  }
+
+  return bestRoute;
+}
+
+  async function optimizeRoute() {
+  try {
+    setError(null);
+    setOptimizing(true);
+
+    if (stops.length < 2) return;
+
+    const HQ = {
+      lat: 55.10692093390334,
+      lng: 14.822756898314669,
+    };
+
+    const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
+
+    const lockedStops = sortedStops.filter((s) => s.status !== "planned");
+    const plannedStops = sortedStops.filter((s) => s.status === "planned");
+
+    if (plannedStops.length < 2) return;
+
+    const plannedWithCoords = plannedStops.filter(
+      (s) =>
+        s.customer?.lat != null &&
+        s.customer?.lng != null &&
+        Number.isFinite(s.customer.lat) &&
+        Number.isFinite(s.customer.lng)
+    );
+
+    const plannedWithoutCoords = plannedStops.filter(
+      (s) =>
+        s.customer?.lat == null ||
+        s.customer?.lng == null ||
+        !Number.isFinite(s.customer.lat) ||
+        !Number.isFinite(s.customer.lng)
+    );
+
+    if (plannedWithCoords.length < 2) return;
+
+    const EXACT_LIMIT = 11;
+
+    let bestPlannedRoute: RouteStop[];
+
+    if (plannedWithCoords.length <= EXACT_LIMIT) {
+      bestPlannedRoute = solveExactRoute(plannedWithCoords, HQ);
+    } else {
+      bestPlannedRoute = solveHeuristicRoute(plannedWithCoords, HQ);
+    }
+
+    const reorderedPlanned = [...bestPlannedRoute, ...plannedWithoutCoords];
+
+    const finalStops = [...lockedStops, ...reorderedPlanned].map((stop, index) => ({
+      ...stop,
+      order_index: index,
+    }));
+
+    for (const stop of finalStops) {
+      const { error } = await supabase
+        .from("route_stops")
+        .update({ order_index: stop.order_index })
+        .eq("id", stop.id);
+
+      if (error) throw error;
+    }
+
+    setStops(finalStops);
+    await loadUpcomingRoutes(upcomingBaseDate);
+  } catch (e: any) {
+    setError(String(e?.message ?? e));
+  } finally {
+    setOptimizing(false);
+  }
+}
   async function suggestCustomersForDate() {
     try {
       setError(null);
