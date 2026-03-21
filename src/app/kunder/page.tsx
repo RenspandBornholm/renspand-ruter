@@ -16,6 +16,8 @@ type CustomerRow = {
   name: string;
   address: string;
   city: string;
+  phone?: string | null;
+  email?: string | null;
   lat: number | null;
   lng: number | null;
   service_type: ServiceType | null;
@@ -333,6 +335,17 @@ export default function KunderPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+
+  const [editName, setEditName] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editServiceType, setEditServiceType] = useState<ServiceType>("single");
+  const [editCustomerType, setEditCustomerType] = useState<CustomerType>("private");
+
   const chosenBinList = useMemo(
     () => (Object.keys(selectedBins) as BinType[]).filter((b) => selectedBins[b]),
     [selectedBins]
@@ -347,6 +360,71 @@ export default function KunderPage() {
 
   function toggleBin(bin: BinType) {
     setSelectedBins((prev) => ({ ...prev, [bin]: !prev[bin] }));
+  }
+
+  function startEditCustomer(c: CustomerRow) {
+    setEditingCustomerId(c.id);
+    setEditName(c.name ?? "");
+    setEditAddress(c.address ?? "");
+    setEditCity(c.city ?? "");
+    setEditPhone(c.phone ?? "");
+    setEditEmail(c.email ?? "");
+    setEditServiceType((c.service_type ?? "single") as ServiceType);
+    setEditCustomerType((c.customer_type ?? "private") as CustomerType);
+
+    setExpandedCustomers((prev) => ({
+      ...prev,
+      [c.id]: true,
+    }));
+  }
+
+  function cancelEditCustomer() {
+    setEditingCustomerId(null);
+    setEditName("");
+    setEditAddress("");
+    setEditCity("");
+    setEditPhone("");
+    setEditEmail("");
+    setEditServiceType("single");
+    setEditCustomerType("private");
+  }
+
+  async function saveEditedCustomer(customerId: string) {
+    setError(null);
+
+    if (!editName.trim() || !editAddress.trim() || !editCity.trim()) {
+      setError("Udfyld navn, adresse og by.");
+      return;
+    }
+
+    setEditSaving(true);
+
+    try {
+      const { error } = await supabase
+        .from("customers")
+        .update({
+          name: editName.trim(),
+          address: editAddress.trim(),
+          city: editCity.trim(),
+          phone: editPhone.trim() || null,
+          email: editEmail.trim() || null,
+          service_type: editServiceType,
+          customer_type: editCustomerType,
+        })
+        .eq("id", customerId);
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      await loadCustomers();
+      cancelEditCustomer();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   function updateBinSetting(bin: BinType, freq: Freq) {
@@ -367,7 +445,7 @@ export default function KunderPage() {
 
     const { data: cData, error: cErr } = await supabase
       .from("customers")
-      .select("id,name,address,city,lat,lng,service_type,customer_type,created_at")
+      .select("id,name,address,city,phone,email,lat,lng,service_type,customer_type,created_at")
       .order("created_at", { ascending: false });
 
     if (cErr) {
@@ -848,6 +926,160 @@ export default function KunderPage() {
     );
   }
 
+  function renderEditForm(customerId: string) {
+    return (
+      <div
+        style={{
+          marginTop: 14,
+          padding: 14,
+          borderRadius: 14,
+          border: "1px solid #2f2f2f",
+          background: "#101010",
+        }}
+      >
+        <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 12 }}>Rediger kunde</div>
+
+        <div style={styles.formGrid}>
+          <div>
+            <label style={styles.label}>Navn</label>
+            <input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Fx Jens Hansen"
+              style={styles.input}
+            />
+          </div>
+
+          <div>
+            <label style={styles.label}>By</label>
+            <input
+              value={editCity}
+              onChange={(e) => setEditCity(e.target.value)}
+              placeholder="Fx Rønne"
+              style={styles.input}
+            />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={styles.label}>Adresse</label>
+            <input
+              value={editAddress}
+              onChange={(e) => setEditAddress(e.target.value)}
+              placeholder="Fx Nørregade 10"
+              style={styles.input}
+            />
+          </div>
+
+          <div>
+            <label style={styles.label}>Telefonnummer</label>
+            <input
+              value={editPhone}
+              onChange={(e) => setEditPhone(e.target.value)}
+              placeholder="Fx 20112233"
+              style={styles.input}
+            />
+          </div>
+
+          <div>
+            <label style={styles.label}>Email</label>
+            <input
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+              placeholder="Fx kunde@mail.dk"
+              style={styles.input}
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <div style={styles.sectionLabel}>Service</div>
+          <div style={styles.serviceGrid}>
+            <button
+              type="button"
+              onClick={() => setEditServiceType("single")}
+              style={{
+                ...styles.serviceCard,
+                ...(editServiceType === "single" ? styles.serviceCardActive : {}),
+              }}
+            >
+              <div style={styles.serviceTitle}>Enkelt vask</div>
+              <div style={styles.serviceSub}>Engangsservice</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEditServiceType("subscription")}
+              style={{
+                ...styles.serviceCard,
+                ...(editServiceType === "subscription" ? styles.serviceCardActive : {}),
+              }}
+            >
+              <div style={styles.serviceTitle}>Abonnement</div>
+              <div style={styles.serviceSub}>Gentagende vask</div>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <div style={styles.sectionLabel}>Kundetype</div>
+          <div style={styles.serviceGrid}>
+            <button
+              type="button"
+              onClick={() => setEditCustomerType("private")}
+              style={{
+                ...styles.serviceCard,
+                ...(editCustomerType === "private" ? styles.serviceCardActive : {}),
+              }}
+            >
+              <div style={styles.serviceTitle}>Privat</div>
+              <div style={styles.serviceSub}>Husholdning</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEditCustomerType("business")}
+              style={{
+                ...styles.serviceCard,
+                ...(editCustomerType === "business" ? styles.serviceCardActive : {}),
+              }}
+            >
+              <div style={styles.serviceTitle}>Erhverv</div>
+              <div style={styles.serviceSub}>Firma / institution</div>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={() => saveEditedCustomer(customerId)}
+            disabled={editSaving}
+            style={{
+              ...styles.smallBtn,
+              border: "1px solid #2ecc71",
+              background: "#12301f",
+              color: "#dff7e8",
+              fontWeight: 900,
+              marginLeft: 0,
+            }}
+          >
+            {editSaving ? "Gemmer..." : "Gem ændringer"}
+          </button>
+
+          <button
+            onClick={cancelEditCustomer}
+            disabled={editSaving}
+            style={{
+              ...styles.smallBtn,
+              marginLeft: 0,
+            }}
+          >
+            Annuller
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   function renderLatestDocumentation(customerId: string) {
     const doc = latestDocByCustomer[customerId];
     if (!doc) return null;
@@ -895,6 +1127,8 @@ export default function KunderPage() {
 
     return (
       <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #262626" }}>
+        {editingCustomerId === c.id ? renderEditForm(c.id) : null}
+
         {renderLatestDocumentation(c.id)}
 
         <div style={{ marginTop: 12 }}>
@@ -1024,6 +1258,13 @@ export default function KunderPage() {
                     {c.address}, {c.city}
                   </div>
 
+                  {c.phone || c.email ? (
+                    <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13, opacity: 0.85 }}>
+                      {c.phone ? <span>📞 {c.phone}</span> : null}
+                      {c.email ? <span>✉️ {c.email}</span> : null}
+                    </div>
+                  ) : null}
+
                   {lastDoneYMD ? (
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                       <span style={styles.pill}>Rengjort d. {lastDoneYMD}</span>
@@ -1035,6 +1276,19 @@ export default function KunderPage() {
                 </div>
 
                 <div style={styles.actionsWrap}>
+                  <button
+                    onClick={() => startEditCustomer(c)}
+                    style={{
+                      ...styles.smallBtn,
+                      border: "1px solid #4ea1ff",
+                      background: "#102033",
+                      color: "#dbeeff",
+                      marginLeft: 0,
+                    }}
+                  >
+                    Rediger
+                  </button>
+
                   <button
                     onClick={() => router.push(`/kunder/${c.id}/historik`)}
                     style={{ ...styles.smallBtn, marginLeft: 0 }}
@@ -1103,6 +1357,13 @@ export default function KunderPage() {
                   <div style={{ marginTop: 6, opacity: 0.9 }}>
                     {c.address}, {c.city}
                   </div>
+
+                  {c.phone || c.email ? (
+                    <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13, opacity: 0.85 }}>
+                      {c.phone ? <span>📞 {c.phone}</span> : null}
+                      {c.email ? <span>✉️ {c.email}</span> : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div style={getCustomerTypeChipStyle(service)}>{getCustomerTypeLabel(service)}</div>
@@ -1120,6 +1381,19 @@ export default function KunderPage() {
               </div>
 
               <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => startEditCustomer(c)}
+                  style={{
+                    ...styles.smallBtn,
+                    border: "1px solid #4ea1ff",
+                    background: "#102033",
+                    color: "#dbeeff",
+                    marginLeft: 0,
+                  }}
+                >
+                  Rediger
+                </button>
+
                 <button
                   onClick={() => router.push(`/kunder/${c.id}/historik`)}
                   style={{ ...styles.smallBtn, marginLeft: 0 }}
