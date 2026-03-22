@@ -71,6 +71,17 @@ type CustomerDocInfo = {
   routeDate: string | null;
 };
 
+type CustomerGroupMeta = {
+  key: string;
+  title: string;
+  subtitle: string;
+  count: number;
+  customers: CustomerRow[];
+  accent: string;
+  accentSoft: string;
+  accentText: string;
+};
+
 const BIN_LABEL: Record<BinType, string> = {
   madaffald: "Madaffald",
   rest_plast: "Rest + plast",
@@ -873,12 +884,48 @@ export default function KunderPage() {
     };
   }, [filteredCustomers]);
 
-  const flatSortedFilteredCustomers = useMemo(() => {
+  const groupedSections = useMemo<CustomerGroupMeta[]>(() => {
     return [
-      ...groupedFilteredCustomers.private_single,
-      ...groupedFilteredCustomers.private_sub,
-      ...groupedFilteredCustomers.business_single,
-      ...groupedFilteredCustomers.business_sub,
+      {
+        key: "private_single",
+        title: "Privat · Enkelt",
+        subtitle: "Private kunder med engangsservice",
+        count: groupedFilteredCustomers.private_single.length,
+        customers: groupedFilteredCustomers.private_single,
+        accent: "#4ea1ff",
+        accentSoft: "rgba(78,161,255,0.10)",
+        accentText: "#dbeeff",
+      },
+      {
+        key: "private_sub",
+        title: "Privat · Abonnement",
+        subtitle: "Private kunder på fast abonnement",
+        count: groupedFilteredCustomers.private_sub.length,
+        customers: groupedFilteredCustomers.private_sub,
+        accent: "#2ecc71",
+        accentSoft: "rgba(46,204,113,0.10)",
+        accentText: "#dff7e8",
+      },
+      {
+        key: "business_single",
+        title: "Erhverv · Enkelt",
+        subtitle: "Erhvervskunder med engangsservice",
+        count: groupedFilteredCustomers.business_single.length,
+        customers: groupedFilteredCustomers.business_single,
+        accent: "#f39c12",
+        accentSoft: "rgba(243,156,18,0.10)",
+        accentText: "#ffe7bf",
+      },
+      {
+        key: "business_sub",
+        title: "Erhverv · Abonnement",
+        subtitle: "Erhvervskunder på fast abonnement",
+        count: groupedFilteredCustomers.business_sub.length,
+        customers: groupedFilteredCustomers.business_sub,
+        accent: "#9b59b6",
+        accentSoft: "rgba(155,89,182,0.12)",
+        accentText: "#f0ddff",
+      },
     ];
   }, [groupedFilteredCustomers]);
 
@@ -1296,7 +1343,13 @@ export default function KunderPage() {
             </div>
           </div>
 
-          <div style={styles.cardActionArea}>
+          <div
+            style={{
+              ...styles.cardActionArea,
+              width: isMobile ? "100%" : undefined,
+              justifyContent: isMobile ? "flex-start" : "flex-end",
+            }}
+          >
             <button
               onClick={() => router.push(`/kunder/${c.id}/historik`)}
               style={{
@@ -1355,10 +1408,54 @@ export default function KunderPage() {
 
   function renderCustomerList(list: CustomerRow[]) {
     if (list.length === 0) {
-      return <div style={{ opacity: 0.72, padding: 16 }}>Ingen kunder matcher filtrene.</div>;
+      return <div style={{ opacity: 0.72, padding: 16 }}>Ingen kunder i denne gruppe.</div>;
     }
 
     return <div style={{ display: "grid", gap: 12 }}>{list.map((c) => renderCustomerCard(c))}</div>;
+  }
+
+  function renderCustomerGroup(group: CustomerGroupMeta) {
+    return (
+      <section key={group.key} style={styles.groupSection}>
+        <div
+          style={{
+            ...styles.groupHeader,
+            border: `1px solid ${group.accent}33`,
+            background: `linear-gradient(180deg, ${group.accentSoft} 0%, rgba(255,255,255,0.02) 100%)`,
+          }}
+        >
+          <div style={styles.groupHeaderLeft}>
+            <div
+              style={{
+                ...styles.groupAccentBar,
+                background: group.accent,
+                boxShadow: `0 0 20px ${group.accent}55`,
+              }}
+            />
+
+            <div>
+              <div style={styles.groupTitleRow}>
+                <h3 style={styles.groupTitle}>{group.title}</h3>
+                <span
+                  style={{
+                    ...styles.groupCountPill,
+                    border: `1px solid ${group.accent}66`,
+                    background: group.accentSoft,
+                    color: group.accentText,
+                  }}
+                >
+                  {group.count} kunde{group.count === 1 ? "" : "r"}
+                </span>
+              </div>
+
+              <div style={styles.groupSubtitle}>{group.subtitle}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>{renderCustomerList(group.customers)}</div>
+      </section>
+    );
   }
 
   return (
@@ -1609,7 +1706,15 @@ export default function KunderPage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 18 }}>{renderCustomerList(flatSortedFilteredCustomers)}</div>
+          <div style={{ marginTop: 18, display: "grid", gap: 18 }}>
+            {groupedSections.some((g) => g.count > 0) ? (
+              groupedSections.map((group) => renderCustomerGroup(group))
+            ) : (
+              <div style={styles.emptyState}>
+                Ingen kunder matcher filtrene.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1633,6 +1738,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   h1: { fontSize: 44, margin: 0, letterSpacing: 0.2 },
   h2: { fontSize: 30, margin: "0 0 12px" },
+  h3: { margin: 0 },
   btn: {
     padding: "10px 14px",
     borderRadius: 12,
@@ -1866,6 +1972,54 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
   },
 
+  groupSection: {
+    borderRadius: 24,
+    padding: 16,
+    border: "1px solid rgba(255,255,255,0.05)",
+    background: "linear-gradient(180deg, rgba(14,14,14,0.96) 0%, rgba(10,10,10,0.92) 100%)",
+    boxShadow: "0 14px 36px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.02)",
+  },
+  groupHeader: {
+    borderRadius: 18,
+    padding: "14px 16px",
+  },
+  groupHeaderLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    flexWrap: "wrap",
+  },
+  groupAccentBar: {
+    width: 6,
+    minWidth: 6,
+    alignSelf: "stretch",
+    borderRadius: 999,
+  },
+  groupTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  groupTitle: {
+    margin: 0,
+    fontSize: 24,
+    fontWeight: 950,
+    letterSpacing: -0.3,
+  },
+  groupSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    opacity: 0.78,
+  },
+  groupCountPill: {
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+
   customerShell: {
     position: "relative",
     borderRadius: 22,
@@ -2026,5 +2180,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     fontSize: 16,
     lineHeight: 1,
+  },
+  emptyState: {
+    opacity: 0.72,
+    padding: 18,
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.06)",
+    background: "rgba(255,255,255,0.02)",
   },
 };
