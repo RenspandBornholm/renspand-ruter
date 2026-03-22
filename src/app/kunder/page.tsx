@@ -203,28 +203,6 @@ function getRouteNotePublicUrl(path: string | null | undefined) {
   return data.publicUrl;
 }
 
-function getCustomerTypeLabel(service: ServiceType) {
-  return service === "subscription" ? "Abonnement" : "Enkelt";
-}
-
-function getCustomerTypeChipStyle(service: ServiceType): React.CSSProperties {
-  if (service === "subscription") {
-    return {
-      ...styles.mobilePill,
-      border: "1px solid #2ecc71",
-      background: "rgba(46,204,113,0.12)",
-      color: "#dff7e8",
-    };
-  }
-
-  return {
-    ...styles.mobilePill,
-    border: "1px solid #777",
-    background: "rgba(255,255,255,0.05)",
-    color: "#f3f3f3",
-  };
-}
-
 function getCustomerTypeTheme(service: ServiceType) {
   if (service === "subscription") {
     return {
@@ -948,7 +926,7 @@ export default function KunderPage() {
     return (
       <div
         style={{
-          marginTop: 14,
+          marginTop: 12,
           padding: 14,
           borderRadius: 16,
           border: "1px solid #262626",
@@ -1112,7 +1090,7 @@ export default function KunderPage() {
           borderRadius: 12,
           border: "1px solid #2b2b2b",
           background: "#101010",
-          maxWidth: 260,
+          maxWidth: 240,
         }}
       >
         <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.9 }}>
@@ -1144,7 +1122,7 @@ export default function KunderPage() {
     const bins = binsByCustomer[c.id] ?? [];
 
     return (
-      <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         {editingCustomerId === c.id ? renderEditForm(c.id) : null}
 
         {renderLatestDocumentation(c.id)}
@@ -1309,14 +1287,10 @@ export default function KunderPage() {
               ) : null}
 
               {inactiveBins.length > 0 ? (
-                <span style={styles.cardBadgeWarning}>
-                  {inactiveBins.length} i bero
-                </span>
+                <span style={styles.cardBadgeWarning}>{inactiveBins.length} i bero</span>
               ) : null}
 
-              {!hasCoords ? (
-                <span style={styles.cardBadgeDanger}>Mangler koordinater</span>
-              ) : null}
+              {!hasCoords ? <span style={styles.cardBadgeDanger}>Mangler koordinater</span> : null}
 
               {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
             </div>
@@ -1330,7 +1304,7 @@ export default function KunderPage() {
                 ...(hasHistory ? styles.cardActionBtnGreen : {}),
               }}
             >
-              {hasHistory ? "Historik 📷" : "Historik"}
+              📷 Historik
             </button>
 
             <button
@@ -1340,7 +1314,7 @@ export default function KunderPage() {
                 ...styles.cardActionBtnBlue,
               }}
             >
-              Rediger
+              📝 Rediger
             </button>
 
             <button
@@ -1351,7 +1325,7 @@ export default function KunderPage() {
                 opacity: !c.address || !c.city ? 0.45 : 1,
               }}
             >
-              {hasCoords ? "Opdater koordinater" : "Find koordinater"}
+              📍 Koordinater
             </button>
 
             <button
@@ -1361,7 +1335,7 @@ export default function KunderPage() {
                 ...styles.cardActionBtnDanger,
               }}
             >
-              Slet
+              🗑️ Slet
             </button>
 
             <button
@@ -1384,7 +1358,7 @@ export default function KunderPage() {
       return <div style={{ opacity: 0.72, padding: 16 }}>Ingen kunder matcher filtrene.</div>;
     }
 
-    return <div style={{ display: "grid", gap: 14 }}>{list.map((c) => renderCustomerCard(c))}</div>;
+    return <div style={{ display: "grid", gap: 12 }}>{list.map((c) => renderCustomerCard(c))}</div>;
   }
 
   return (
@@ -1555,13 +1529,11 @@ export default function KunderPage() {
           </button>
         </div>
 
-        <div style={{ marginTop: 34 }}>
+        <div style={{ marginTop: 30 }}>
           <div style={styles.listHeaderRow}>
             <div>
               <h2 style={{ ...styles.h2, marginBottom: 6 }}>Kundeliste</h2>
-              <div style={{ opacity: 0.72, fontSize: 14 }}>
-                Søg, filtrér og administrér dine kunder
-              </div>
+              <div style={{ opacity: 0.72, fontSize: 14 }}>Søg, filtrér og administrér dine kunder</div>
             </div>
 
             <div style={styles.customerCountPill}>
@@ -1637,9 +1609,7 @@ export default function KunderPage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 20 }}>
-            {renderCustomerList(flatSortedFilteredCustomers)}
-          </div>
+          <div style={{ marginTop: 18 }}>{renderCustomerList(flatSortedFilteredCustomers)}</div>
         </div>
       </div>
 
@@ -1748,16 +1718,16 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#141414",
     borderRadius: 16,
     padding: "0 12px",
-    minHeight: 58,
+    minHeight: 54,
   },
   searchIcon: {
     opacity: 0.78,
-    fontSize: 22,
+    fontSize: 20,
     lineHeight: 1,
   },
   searchInput: {
     width: "100%",
-    height: 56,
+    height: 52,
     border: "none",
     outline: "none",
     background: "transparent",
@@ -1884,17 +1854,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
   },
 
-  mobilePill: {
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid #2b2b2b",
-    background: "#111",
-    fontSize: 12,
-    fontWeight: 900,
-    whiteSpace: "nowrap",
-    opacity: 0.95,
-  },
-
   binLine: {
     display: "flex",
     alignItems: "center",
@@ -1913,37 +1872,36 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     border: "1px solid rgba(255,255,255,0.07)",
     background:
-      "radial-gradient(circle at top right, rgba(46,204,113,0.06), transparent 32%), linear-gradient(180deg, rgba(17,17,17,0.98) 0%, rgba(11,11,11,0.96) 100%)",
+      "radial-gradient(circle at top right, rgba(46,204,113,0.05), transparent 30%), linear-gradient(180deg, rgba(17,17,17,0.98) 0%, rgba(11,11,11,0.96) 100%)",
     boxShadow: "0 16px 42px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)",
-    padding: 16,
+    padding: 14,
   },
   customerShellGlow: {
     position: "absolute",
     inset: 0,
     pointerEvents: "none",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.018) 0%, rgba(255,255,255,0) 35%)",
+    background: "linear-gradient(180deg, rgba(255,255,255,0.018) 0%, rgba(255,255,255,0) 35%)",
   },
   customerCardTop: {
     position: "relative",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: 16,
+    gap: 12,
     flexWrap: "wrap",
   },
   customerTopLine: {
     display: "flex",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: 12,
+    gap: 10,
     flexWrap: "wrap",
   },
   customerName: {
-    fontSize: 34,
-    fontWeight: 900,
-    lineHeight: 1.05,
-    letterSpacing: -0.4,
+    fontSize: 28,
+    fontWeight: 950,
+    lineHeight: 1.03,
+    letterSpacing: -0.5,
   },
   customerTopBadges: {
     display: "flex",
@@ -1952,16 +1910,16 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
   },
   cardBadge: {
-    padding: "7px 11px",
+    padding: "6px 10px",
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 900,
     whiteSpace: "nowrap",
   },
   cardBadgeMuted: {
-    padding: "7px 11px",
+    padding: "6px 10px",
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 900,
     whiteSpace: "nowrap",
     border: "1px solid rgba(255,255,255,0.09)",
@@ -1969,9 +1927,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#f1f1f1",
   },
   cardBadgeWarning: {
-    padding: "7px 11px",
+    padding: "6px 10px",
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 900,
     whiteSpace: "nowrap",
     border: "1px solid rgba(241,196,15,0.5)",
@@ -1979,9 +1937,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#fff0b3",
   },
   cardBadgeDanger: {
-    padding: "7px 11px",
+    padding: "6px 10px",
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 900,
     whiteSpace: "nowrap",
     border: "1px solid rgba(255,77,79,0.5)",
@@ -1989,15 +1947,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffd6d6",
   },
   customerAddress: {
-    marginTop: 10,
-    fontSize: 18,
-    lineHeight: 1.35,
+    marginTop: 8,
+    fontSize: 16,
+    lineHeight: 1.3,
     color: "rgba(255,255,255,0.9)",
   },
   customerContactRow: {
     marginTop: 8,
     display: "flex",
-    gap: 12,
+    gap: 10,
     flexWrap: "wrap",
     alignItems: "center",
   },
@@ -2006,19 +1964,19 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.88,
   },
   customerMetaRow: {
-    marginTop: 12,
+    marginTop: 10,
     display: "flex",
     gap: 8,
     flexWrap: "wrap",
     alignItems: "center",
   },
   binMiniBadge: {
-    padding: "7px 11px",
+    padding: "6px 10px",
     borderRadius: 999,
     border: "1px solid rgba(46,204,113,0.35)",
     background: "rgba(46,204,113,0.08)",
     color: "#dff7e8",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 900,
     whiteSpace: "nowrap",
   },
@@ -2031,14 +1989,16 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "100%",
   },
   cardActionBtn: {
-    padding: "10px 14px",
+    padding: "8px 12px",
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.03)",
     color: "#fff",
     cursor: "pointer",
     fontWeight: 800,
-    minHeight: 42,
+    minHeight: 38,
+    fontSize: 13,
+    whiteSpace: "nowrap",
   },
   cardActionBtnGreen: {
     border: "1px solid rgba(46,204,113,0.4)",
@@ -2056,15 +2016,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffd6d6",
   },
   cardExpandBtn: {
-    width: 42,
-    height: 42,
+    width: 38,
+    height: 38,
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.03)",
     color: "#fff",
     cursor: "pointer",
     fontWeight: 900,
-    fontSize: 18,
+    fontSize: 16,
     lineHeight: 1,
   },
 };
