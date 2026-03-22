@@ -305,6 +305,37 @@ function openSmsToCustomer(customer: Customer) {
   window.location.href = smsUrl;
 }
 
+function overviewCardStyle(tone: "green" | "blue" | "emerald" | "orange"): React.CSSProperties {
+  if (tone === "green") {
+    return {
+      border: "1px solid rgba(46,204,113,0.55)",
+      background: "radial-gradient(circle at top left, rgba(46,204,113,0.18), rgba(46,204,113,0.06) 45%, rgba(10,10,10,0.95) 100%)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 1px rgba(46,204,113,0.05)",
+    };
+  }
+
+  if (tone === "blue") {
+    return {
+      border: "1px solid rgba(78,161,255,0.55)",
+      background: "radial-gradient(circle at top left, rgba(78,161,255,0.18), rgba(78,161,255,0.06) 45%, rgba(10,10,10,0.95) 100%)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 1px rgba(78,161,255,0.05)",
+    };
+  }
+
+  if (tone === "emerald") {
+    return {
+      border: "1px solid rgba(39,194,107,0.55)",
+      background: "radial-gradient(circle at top left, rgba(39,194,107,0.18), rgba(39,194,107,0.06) 45%, rgba(10,10,10,0.95) 100%)",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 1px rgba(39,194,107,0.05)",
+    };
+  }
+
+  return {
+    border: "1px solid rgba(255,140,90,0.55)",
+    background: "radial-gradient(circle at top left, rgba(255,140,90,0.18), rgba(255,140,90,0.06) 45%, rgba(10,10,10,0.95) 100%)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 1px rgba(255,140,90,0.05)",
+  };
+}
 function upcomingRouteStyle(row: UpcomingRouteRow, isActive: boolean): React.CSSProperties {
   if (isActive) {
     return {
@@ -353,6 +384,14 @@ export default function KortPage() {
   const [loading, setLoading] = useState(true);
   const [planMessage, setPlanMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 900);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const initialDate = searchParams.get("date") || toYMD(new Date());
   const [routeDate, setRouteDate] = useState<string>(initialDate);
@@ -434,6 +473,21 @@ export default function KortPage() {
       driveMinutes,
     };
   }, [stops]);
+  const dayOverview = useMemo(() => {
+    const total = stops.length;
+    const done = stops.filter((s) => s.status === "done").length;
+    const skipped = stops.filter((s) => s.status === "skipped").length;
+    const remaining = stops.filter((s) => s.status === "planned").length;
+
+    return {
+      total,
+      done,
+      skipped,
+      remaining,
+      km: routeStats.totalKm,
+      minutes: routeStats.driveMinutes,
+    };
+  }, [stops, routeStats.totalKm, routeStats.driveMinutes]);
 
   useEffect(() => {
     (async () => {
@@ -1651,8 +1705,16 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
         </div>
       )}
 
-      <div style={{ marginTop: 14, display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "auto auto auto 1fr minmax(320px, 420px)",
+          gap: 12,
+          alignItems: "end",
+        }}
+      >
+        <label style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800 }}>Dato:</span>
           <input
             id="routeDate"
@@ -1661,11 +1723,12 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
             value={routeDate}
             onChange={(e) => setRouteDate(e.target.value)}
             style={{
-              padding: "8px 10px",
-              borderRadius: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
               border: "1px solid #333",
               background: "#111",
               color: "#fff",
+              minHeight: 46,
             }}
           />
         </label>
@@ -1683,49 +1746,52 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
             fontWeight: 900,
             fontSize: 14,
             minHeight: 46,
+            width: isMobile ? "100%" : undefined,
           }}
         >
           {adding || optimizing ? "Planlægger…" : "Planlæg dagen"}
         </button>
 
-        <button
-          onClick={() => openGoogleMapsRoute(selectedPoints)}
-          disabled={selectedPoints.length < 1}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 14,
-            background: selectedPoints.length < 1 ? "#161616" : "#151515",
-            border: "1px solid #3a3a3a",
-            color: "#fff",
-            cursor: selectedPoints.length < 1 ? "not-allowed" : "pointer",
-            fontWeight: 900,
-            fontSize: 14,
-            minHeight: 46,
-          }}
-        >
-          Åbn rute (fra HQ)
-        </button>
+        {!isMobile ? (
+          <button
+            onClick={() => openGoogleMapsRoute(selectedPoints)}
+            disabled={selectedPoints.length < 1}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              background: selectedPoints.length < 1 ? "#161616" : "#151515",
+              border: "1px solid #3a3a3a",
+              color: "#fff",
+              cursor: selectedPoints.length < 1 ? "not-allowed" : "pointer",
+              fontWeight: 900,
+              fontSize: 14,
+              minHeight: 46,
+            }}
+          >
+            Åbn rute (fra HQ)
+          </button>
+        ) : null}
 
-        <button
-          onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 14,
-            background: "#151515",
-            border: "1px solid #3a3a3a",
-            color: "#fff",
-            cursor: "pointer",
-            fontWeight: 900,
-            fontSize: 14,
-            minHeight: 46,
-          }}
-        >
-          Næste stop (app)
-        </button>
+        {!isMobile ? (
+          <button
+            onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 14,
+              background: "#151515",
+              border: "1px solid #3a3a3a",
+              color: "#fff",
+              cursor: "pointer",
+              fontWeight: 900,
+              fontSize: 14,
+              minHeight: 46,
+            }}
+          >
+            Næste stop (app)
+          </button>
+        ) : null}
 
-        <div style={{ flex: 1 }} />
-
-        <div style={{ minWidth: 320 }}>
+        <div style={{ minWidth: 0 }}>
           <input
             id="searchCustomer"
             name="searchCustomer"
@@ -1739,6 +1805,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
               border: "1px solid #333",
               background: "#111",
               color: "#fff",
+              minHeight: 46,
             }}
           />
           {filteredCustomers.length > 0 && (
@@ -1786,326 +1853,681 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
             </div>
           )}
         </div>
-      </div>
 
-      <div
+        {isMobile ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <button
+              onClick={() => openGoogleMapsRoute(selectedPoints)}
+              disabled={selectedPoints.length < 1}
+              style={{
+                padding: "12px 14px",
+                borderRadius: 14,
+                background: selectedPoints.length < 1 ? "#161616" : "#151515",
+                border: "1px solid #3a3a3a",
+                color: "#fff",
+                cursor: selectedPoints.length < 1 ? "not-allowed" : "pointer",
+                fontWeight: 900,
+                fontSize: 14,
+                minHeight: 46,
+              }}
+            >
+              Åbn rute
+            </button>
+
+            <button
+              onClick={() => router.push(`/kort/naeste?date=${encodeURIComponent(routeDate)}`)}
+              style={{
+                padding: "12px 14px",
+                borderRadius: 14,
+                background: "#151515",
+                border: "1px solid #3a3a3a",
+                color: "#fff",
+                cursor: "pointer",
+                fontWeight: 900,
+                fontSize: 14,
+                minHeight: 46,
+              }}
+            >
+              Næste stop
+            </button>
+          </div>
+        ) : null}
+      </div>
+            <div
         style={{
           marginTop: 18,
           display: "grid",
-          gridTemplateColumns: "minmax(0, 420px) minmax(0, 1fr)",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 420px) minmax(0, 1fr)",
           gap: 16,
+          alignItems: "start",
         }}
       >
-        <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
+        <div
+          style={{
+            order: isMobile ? 2 : 1,
+            background: "#0d0d0d",
+            border: "1px solid #222",
+            borderRadius: 18,
+            padding: 14,
+          }}
+        >
+          <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 12 }}>Dagens overblik</div>
 
-          <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-            <div style={{ opacity: 0.9 }}>{routeStats.stopCount} stop</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr",
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                ...overviewCardStyle("green"),
+                borderRadius: 18,
+                padding: isMobile ? 14 : 16,
+              }}
+            >
+              <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, opacity: 0.95 }}>🟢 Stop i alt</div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 42 : 46, fontWeight: 900, lineHeight: 1 }}>
+                {dayOverview.total}
+              </div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 14 : 15, fontWeight: 700, opacity: 0.9 }}>
+                {dayOverview.km.toFixed(1)} km
+              </div>
+            </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #333",
-                  background: "#111",
-                  fontSize: 12,
-                  fontWeight: 900,
-                }}
-              >
-                🚛 {routeStats.totalKm.toFixed(1)} km
-              </span>
+            <div
+              style={{
+                ...overviewCardStyle("blue"),
+                borderRadius: 18,
+                padding: isMobile ? 14 : 16,
+              }}
+            >
+              <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, opacity: 0.95 }}>🔵 Tilbage</div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 42 : 46, fontWeight: 900, lineHeight: 1 }}>
+                {dayOverview.remaining}
+              </div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 14 : 15, fontWeight: 700, opacity: 0.9 }}>
+                Est. {formatDriveTime(dayOverview.minutes)}
+              </div>
+            </div>
 
-              <span
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #333",
-                  background: "#111",
-                  fontSize: 12,
-                  fontWeight: 900,
-                }}
-              >
-                ⏱️ ca. {formatDriveTime(routeStats.driveMinutes)}
-              </span>
+            <div
+              style={{
+                ...overviewCardStyle("emerald"),
+                borderRadius: 18,
+                padding: isMobile ? 14 : 16,
+              }}
+            >
+              <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, opacity: 0.95 }}>✅ Rengjort</div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 42 : 46, fontWeight: 900, lineHeight: 1 }}>
+                {dayOverview.done}
+              </div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 14 : 15, fontWeight: 700, opacity: 0.9 }}>
+                Færdige stop
+              </div>
+            </div>
+
+            <div
+              style={{
+                ...overviewCardStyle("orange"),
+                borderRadius: 18,
+                padding: isMobile ? 14 : 16,
+              }}
+            >
+              <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, opacity: 0.95 }}>⚠️ Ikke muligt</div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 42 : 46, fontWeight: 900, lineHeight: 1 }}>
+                {dayOverview.skipped}
+              </div>
+              <div style={{ marginTop: 10, fontSize: isMobile ? 14 : 15, fontWeight: 700, opacity: 0.9 }}>
+                Uafsluttede
+              </div>
             </div>
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-            {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
+          {!isMobile ? (
+            <>
+              <div style={{ marginTop: 18, fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
 
-            {sortedStops.map((s, i) => {
-              const c = s.customer;
-              const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
-              const todays =
-                Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
-                  ? s.planned_bin_types
-                  : todayBinsByCustomer[s.customer_id] ?? [];
+              <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
 
-              return (
-                <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ fontWeight: 900 }}>
-                      {i + 1}. {c?.name ?? "(ukendt)"}{" "}
-                      <span style={{ marginLeft: 8, color: statusColor, fontWeight: 900 }}>
-                        {s.status === "planned" ? "PLAN" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
-                      </span>
-                    </div>
+                {sortedStops.map((s, i) => {
+                  const c = s.customer;
+                  const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
+                  const todays =
+                    Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
+                      ? s.planned_bin_types
+                      : todayBinsByCustomer[s.customer_id] ?? [];
 
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button
-                        onClick={() => moveStop(s.id, -1).catch((e) => setError(String(e?.message ?? e)))}
-                        disabled={i === 0}
-                        style={{
-                          padding: "6px 8px",
-                          borderRadius: 10,
-                          border: "1px solid #333",
-                          background: "#111",
-                          color: "#fff",
-                          cursor: i === 0 ? "not-allowed" : "pointer",
-                          fontWeight: 900,
-                        }}
-                      >
-                        ↑
-                      </button>
+                  return (
+                    <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 10, background: "#0b0b0b" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontWeight: 900 }}>
+                          {i + 1}. {c?.name ?? "(ukendt)"}{" "}
+                          <span style={{ marginLeft: 8, color: statusColor, fontWeight: 900 }}>
+                            {s.status === "planned" ? "PLAN" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
+                          </span>
+                        </div>
 
-                      <button
-                        onClick={() => moveStop(s.id, 1).catch((e) => setError(String(e?.message ?? e)))}
-                        disabled={i === sortedStops.length - 1}
-                        style={{
-                          padding: "6px 8px",
-                          borderRadius: 10,
-                          border: "1px solid #333",
-                          background: "#111",
-                          color: "#fff",
-                          cursor: i === sortedStops.length - 1 ? "not-allowed" : "pointer",
-                          fontWeight: 900,
-                        }}
-                      >
-                        ↓
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                    {(c?.address ?? "").trim()} {c?.city ? `, ${c.city}` : ""}
-                    {!c?.lat || !c?.lng ? " • (mangler koordinater)" : ""}
-                  </div>
-
-                  {c?.phone ? (
-                    <div
-                      style={{
-                        marginTop: 6,
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                      }}
-                    >
-                      <span style={{ fontSize: 12, opacity: 0.9 }}>
-                        <b>Tlf:</b> {c.phone}
-                      </span>
-
-                      <button
-                        onClick={() => openSmsToCustomer(c)}
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: 10,
-                          border: "1px solid #4ea1ff",
-                          background: "#101010",
-                          color: "#dbeeff",
-                          cursor: "pointer",
-                          fontWeight: 800,
-                          fontSize: 12,
-                        }}
-                      >
-                        📩 SMS
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
-                      <b>Tlf:</b> mangler
-                    </div>
-                  )}
-
-                  {todays.length ? (
-                    <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {todays.map((bt) => {
-                        const key = `${s.customer_id}__${bt}`;
-                        const info = binOpportunityByCustomerBin[key];
-
-                        return (
-                          <div
-                            key={bt}
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button
+                            onClick={() => moveStop(s.id, -1).catch((e) => setError(String(e?.message ?? e)))}
+                            disabled={i === 0}
                             style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 6,
+                              padding: "6px 8px",
+                              borderRadius: 10,
+                              border: "1px solid #333",
+                              background: "#111",
+                              color: "#fff",
+                              cursor: i === 0 ? "not-allowed" : "pointer",
+                              fontWeight: 900,
                             }}
                           >
-                            <span
-                              style={{
-                                padding: "5px 10px",
-                                borderRadius: 999,
-                                border: "1px solid #333",
-                                background: "#111",
-                                fontSize: 12,
-                                fontWeight: 900,
-                              }}
-                            >
-                              {binIconShort(bt)} {binLabelShort(bt)}
-                            </span>
+                            ↑
+                          </button>
 
-                            {s.status === "done" ? (
-                              <span
+                          <button
+                            onClick={() => moveStop(s.id, 1).catch((e) => setError(String(e?.message ?? e)))}
+                            disabled={i === sortedStops.length - 1}
+                            style={{
+                              padding: "6px 8px",
+                              borderRadius: 10,
+                              border: "1px solid #333",
+                              background: "#111",
+                              color: "#fff",
+                              cursor: i === sortedStops.length - 1 ? "not-allowed" : "pointer",
+                              fontWeight: 900,
+                            }}
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+                        {(c?.address ?? "").trim()} {c?.city ? `, ${c.city}` : ""}
+                        {!c?.lat || !c?.lng ? " • (mangler koordinater)" : ""}
+                      </div>
+
+                      {c?.phone ? (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          <span style={{ fontSize: 12, opacity: 0.9 }}>
+                            <b>Tlf:</b> {c.phone}
+                          </span>
+
+                          <button
+                            onClick={() => openSmsToCustomer(c)}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 10,
+                              border: "1px solid #4ea1ff",
+                              background: "#101010",
+                              color: "#dbeeff",
+                              cursor: "pointer",
+                              fontWeight: 800,
+                              fontSize: 12,
+                            }}
+                          >
+                            📩 SMS
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
+                          <b>Tlf:</b> mangler
+                        </div>
+                      )}
+
+                      {todays.length ? (
+                        <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {todays.map((bt) => {
+                            const key = `${s.customer_id}__${bt}`;
+                            const info = binOpportunityByCustomerBin[key];
+
+                            return (
+                              <div
+                                key={bt}
                                 style={{
-                                  display: "inline-block",
-                                  padding: "5px 10px",
-                                  borderRadius: 999,
-                                  fontSize: 12,
-                                  fontWeight: 900,
-                                  ...nextDateBadgeStyle,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 6,
                                 }}
                               >
-                                {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
-                              </span>
-                            ) : info?.remainingCount ? (
-                              <span
-                                style={{
-                                  display: "inline-block",
-                                  padding: "5px 10px",
-                                  borderRadius: 999,
-                                  fontSize: 12,
-                                  fontWeight: 900,
-                                  ...counterBadgeStyle(info.remainingCount),
-                                }}
-                              >
-                                {info.remainingCount} forsøg tilbage
-                              </span>
-                            ) : null}
-                          </div>
-                        );
-                      })}
+                                <span
+                                  style={{
+                                    padding: "5px 10px",
+                                    borderRadius: 999,
+                                    border: "1px solid #333",
+                                    background: "#111",
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                  }}
+                                >
+                                  {binIconShort(bt)} {binLabelShort(bt)}
+                                </span>
+
+                                {s.status === "done" ? (
+                                  <span
+                                    style={{
+                                      display: "inline-block",
+                                      padding: "5px 10px",
+                                      borderRadius: 999,
+                                      fontSize: 12,
+                                      fontWeight: 900,
+                                      ...nextDateBadgeStyle,
+                                    }}
+                                  >
+                                    {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
+                                  </span>
+                                ) : info?.remainingCount ? (
+                                  <span
+                                    style={{
+                                      display: "inline-block",
+                                      padding: "5px 10px",
+                                      borderRadius: 999,
+                                      fontSize: 12,
+                                      fontWeight: 900,
+                                      ...counterBadgeStyle(info.remainingCount),
+                                    }}
+                                  >
+                                    {info.remainingCount} forsøg tilbage
+                                  </span>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+
+                      {s.note ? (
+                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.95 }}>
+                          <b>Note:</b> {s.note}
+                        </div>
+                      ) : null}
+
+                      <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                        <button
+                          onClick={() => setStopNote(s.id).catch((e) => setError(String(e?.message ?? e)))}
+                          style={{
+                            padding: "8px 14px",
+                            borderRadius: 12,
+                            border: "1px solid #333",
+                            background: "#101010",
+                            color: "#fff",
+                            cursor: "pointer",
+                            fontWeight: 900,
+                          }}
+                        >
+                          Note
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            try {
+                              const doneAt = new Date().toISOString();
+                              const updatedStop: RouteStop = { ...s, status: "done", done_at: doneAt };
+
+                              await updateStop(s.id, { status: "done", done_at: doneAt });
+                              await deactivateSingleCustomerPlannedBins(updatedStop);
+                              await writeServiceHistory(updatedStop, "done");
+                            } catch (e: any) {
+                              setError(String(e?.message ?? e));
+                            }
+                          }}
+                          style={{
+                            padding: "8px 14px",
+                            borderRadius: 12,
+                            border: "1px solid #2ecc71",
+                            background: s.status === "done" ? "#0f2a1b" : "#101010",
+                            color: "#dff7e8",
+                            cursor: "pointer",
+                            fontWeight: 900,
+                          }}
+                        >
+                          Rengjort
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            try {
+                              await updateStop(s.id, { status: "skipped", done_at: null });
+                              await writeServiceHistory({ ...s, status: "skipped", done_at: null }, "skipped");
+                            } catch (e: any) {
+                              setError(String(e?.message ?? e));
+                            }
+                          }}
+                          style={{
+                            padding: "8px 14px",
+                            borderRadius: 12,
+                            border: "1px solid #ff4d4f",
+                            background: s.status === "skipped" ? "#2a0a0a" : "#101010",
+                            color: "#ffd6d6",
+                            cursor: "pointer",
+                            fontWeight: 900,
+                          }}
+                        >
+                          Ikke muligt
+                        </button>
+
+                        <button
+                          onClick={() => updateStop(s.id, { status: "planned", done_at: null }).catch((e) => setError(String(e?.message ?? e)))}
+                          style={{
+                            padding: "8px 14px",
+                            borderRadius: 12,
+                            border: "1px solid #444",
+                            background: "#101010",
+                            color: "#fff",
+                            cursor: "pointer",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Nulstil
+                        </button>
+
+                        <button
+                          onClick={() => removeStop(s.id).catch((e) => setError(String(e?.message ?? e)))}
+                          style={{
+                            marginLeft: "auto",
+                            padding: "8px 14px",
+                            borderRadius: 12,
+                            border: "1px solid #444",
+                            background: "#101010",
+                            color: "#fff",
+                            cursor: "pointer",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Fjern
+                        </button>
+                      </div>
                     </div>
-                  ) : null}
-
-                  {s.note ? (
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.95 }}>
-                      <b>Note:</b> {s.note}
-                    </div>
-                  ) : null}
-
-                  <div style={{ marginTop: 12, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                    <button
-                      onClick={() => setStopNote(s.id).catch((e) => setError(String(e?.message ?? e)))}
-                      style={{
-                        padding: "8px 14px",
-                        borderRadius: 12,
-                        border: "1px solid #333",
-                        background: "#101010",
-                        color: "#fff",
-                        cursor: "pointer",
-                        fontWeight: 900,
-                      }}
-                    >
-                      Note
-                    </button>
-
-                    <button
-                      onClick={async () => {
-                        try {
-                          const doneAt = new Date().toISOString();
-                          const updatedStop: RouteStop = { ...s, status: "done", done_at: doneAt };
-
-                          await updateStop(s.id, { status: "done", done_at: doneAt });
-                          await deactivateSingleCustomerPlannedBins(updatedStop);
-                          await writeServiceHistory(updatedStop, "done");
-                        } catch (e: any) {
-                          setError(String(e?.message ?? e));
-                        }
-                      }}
-                      style={{
-                        padding: "8px 14px",
-                        borderRadius: 12,
-                        border: "1px solid #2ecc71",
-                        background: s.status === "done" ? "#0f2a1b" : "#101010",
-                        color: "#dff7e8",
-                        cursor: "pointer",
-                        fontWeight: 900,
-                      }}
-                    >
-                      Rengjort
-                    </button>
-
-                    <button
-                      onClick={async () => {
-                        try {
-                          await updateStop(s.id, { status: "skipped", done_at: null });
-                          await writeServiceHistory({ ...s, status: "skipped", done_at: null }, "skipped");
-                        } catch (e: any) {
-                          setError(String(e?.message ?? e));
-                        }
-                      }}
-                      style={{
-                        padding: "8px 14px",
-                        borderRadius: 12,
-                        border: "1px solid #ff4d4f",
-                        background: s.status === "skipped" ? "#2a0a0a" : "#101010",
-                        color: "#ffd6d6",
-                        cursor: "pointer",
-                        fontWeight: 900,
-                      }}
-                    >
-                      Ikke muligt
-                    </button>
-
-                    <button
-                      onClick={() => updateStop(s.id, { status: "planned", done_at: null }).catch((e) => setError(String(e?.message ?? e)))}
-                      style={{
-                        padding: "8px 14px",
-                        borderRadius: 12,
-                        border: "1px solid #444",
-                        background: "#101010",
-                        color: "#fff",
-                        cursor: "pointer",
-                        fontWeight: 800,
-                      }}
-                    >
-                      Nulstil
-                    </button>
-
-                    <button
-                      onClick={() => removeStop(s.id).catch((e) => setError(String(e?.message ?? e)))}
-                      style={{
-                        marginLeft: "auto",
-                        padding: "8px 14px",
-                        borderRadius: 12,
-                        border: "1px solid #444",
-                        background: "#101010",
-                        color: "#fff",
-                        cursor: "pointer",
-                        fontWeight: 800,
-                      }}
-                    >
-                      Fjern
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
         </div>
 
-        <div style={{ background: "#0d0d0d", border: "1px solid #222", borderRadius: 16, padding: 14 }}>
+        <div
+          style={{
+            order: isMobile ? 1 : 2,
+            background: "#0d0d0d",
+            border: "1px solid #222",
+            borderRadius: 18,
+            padding: 14,
+          }}
+        >
           <div
             ref={mapDivRef}
             style={{
-              height: 620,
-              borderRadius: 14,
+              height: isMobile ? 520 : 620,
+              width: "100%",
+              borderRadius: 16,
               overflow: "hidden",
               background: "#111",
             }}
           />
+
+          {isMobile ? (
+            <div
+              style={{
+                marginTop: 14,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              <div style={{ fontWeight: 900, fontSize: 18 }}>Dagens rute</div>
+
+              {sortedStops.length === 0 && <div style={{ opacity: 0.8 }}>Ingen stop endnu.</div>}
+
+              {sortedStops.map((s, i) => {
+                const c = s.customer;
+                const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
+                const todays =
+                  Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
+                    ? s.planned_bin_types
+                    : todayBinsByCustomer[s.customer_id] ?? [];
+
+                return (
+                  <div key={s.id} style={{ border: "1px solid #222", borderRadius: 14, padding: 12, background: "#0b0b0b" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 900 }}>
+                          {i + 1}. {c?.name ?? "(ukendt)"}
+                        </div>
+                        <div style={{ marginTop: 4, fontSize: 12, color: statusColor, fontWeight: 900 }}>
+                          {s.status === "planned" ? "PLANLAGT" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          onClick={() => moveStop(s.id, -1).catch((e) => setError(String(e?.message ?? e)))}
+                          disabled={i === 0}
+                          style={{
+                            padding: "6px 8px",
+                            borderRadius: 10,
+                            border: "1px solid #333",
+                            background: "#111",
+                            color: "#fff",
+                            cursor: i === 0 ? "not-allowed" : "pointer",
+                            fontWeight: 900,
+                          }}
+                        >
+                          ↑
+                        </button>
+
+                        <button
+                          onClick={() => moveStop(s.id, 1).catch((e) => setError(String(e?.message ?? e)))}
+                          disabled={i === sortedStops.length - 1}
+                          style={{
+                            padding: "6px 8px",
+                            borderRadius: 10,
+                            border: "1px solid #333",
+                            background: "#111",
+                            color: "#fff",
+                            cursor: i === sortedStops.length - 1 ? "not-allowed" : "pointer",
+                            fontWeight: 900,
+                          }}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8, fontSize: 12, opacity: 0.82 }}>
+                      {(c?.address ?? "").trim()} {c?.city ? `, ${c.city}` : ""}
+                    </div>
+
+                    {c?.phone ? (
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          onClick={() => openSmsToCustomer(c)}
+                          style={{
+                            padding: "7px 10px",
+                            borderRadius: 10,
+                            border: "1px solid #4ea1ff",
+                            background: "#101010",
+                            color: "#dbeeff",
+                            cursor: "pointer",
+                            fontWeight: 800,
+                            fontSize: 12,
+                          }}
+                        >
+                          📩 SMS · {c.phone}
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {todays.length ? (
+                      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {todays.map((bt) => {
+                          const key = `${s.customer_id}__${bt}`;
+                          const info = binOpportunityByCustomerBin[key];
+
+                          return (
+                            <div key={bt} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              <span
+                                style={{
+                                  padding: "5px 10px",
+                                  borderRadius: 999,
+                                  border: "1px solid #333",
+                                  background: "#111",
+                                  fontSize: 12,
+                                  fontWeight: 900,
+                                }}
+                              >
+                                {binIconShort(bt)} {binLabelShort(bt)}
+                              </span>
+
+                              {s.status === "done" ? (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    padding: "5px 10px",
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                    ...nextDateBadgeStyle,
+                                  }}
+                                >
+                                  {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
+                                </span>
+                              ) : info?.remainingCount ? (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    padding: "5px 10px",
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    fontWeight: 900,
+                                    ...counterBadgeStyle(info.remainingCount),
+                                  }}
+                                >
+                                  {info.remainingCount} forsøg tilbage
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {s.note ? (
+                      <div style={{ marginTop: 8, fontSize: 12, opacity: 0.95 }}>
+                        <b>Note:</b> {s.note}
+                      </div>
+                    ) : null}
+
+                    <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <button
+                        onClick={() => setStopNote(s.id).catch((e) => setError(String(e?.message ?? e)))}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid #333",
+                          background: "#101010",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontWeight: 900,
+                        }}
+                      >
+                        Note
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          try {
+                            const doneAt = new Date().toISOString();
+                            const updatedStop: RouteStop = { ...s, status: "done", done_at: doneAt };
+
+                            await updateStop(s.id, { status: "done", done_at: doneAt });
+                            await deactivateSingleCustomerPlannedBins(updatedStop);
+                            await writeServiceHistory(updatedStop, "done");
+                          } catch (e: any) {
+                            setError(String(e?.message ?? e));
+                          }
+                        }}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid #2ecc71",
+                          background: s.status === "done" ? "#0f2a1b" : "#101010",
+                          color: "#dff7e8",
+                          cursor: "pointer",
+                          fontWeight: 900,
+                        }}
+                      >
+                        Rengjort
+                      </button>
+
+                      <button
+                        onClick={async () => {
+                          try {
+                            await updateStop(s.id, { status: "skipped", done_at: null });
+                            await writeServiceHistory({ ...s, status: "skipped", done_at: null }, "skipped");
+                          } catch (e: any) {
+                            setError(String(e?.message ?? e));
+                          }
+                        }}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid #ff4d4f",
+                          background: s.status === "skipped" ? "#2a0a0a" : "#101010",
+                          color: "#ffd6d6",
+                          cursor: "pointer",
+                          fontWeight: 900,
+                        }}
+                      >
+                        Ikke muligt
+                      </button>
+
+                      <button
+                        onClick={() => updateStop(s.id, { status: "planned", done_at: null }).catch((e) => setError(String(e?.message ?? e)))}
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid #444",
+                          background: "#101010",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                        }}
+                      >
+                        Nulstil
+                      </button>
+
+                      <button
+                        onClick={() => removeStop(s.id).catch((e) => setError(String(e?.message ?? e)))}
+                        style={{
+                          gridColumn: "1 / -1",
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid #444",
+                          background: "#101010",
+                          color: "#fff",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                        }}
+                      >
+                        Fjern stop
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
 
