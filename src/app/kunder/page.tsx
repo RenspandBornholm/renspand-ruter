@@ -345,6 +345,10 @@ export default function KunderPage() {
   const [editEmail, setEditEmail] = useState("");
   const [editServiceType, setEditServiceType] = useState<ServiceType>("single");
   const [editCustomerType, setEditCustomerType] = useState<CustomerType>("private");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCustomerType, setFilterCustomerType] = useState<"all" | CustomerType>("all");
+  const [filterServiceType, setFilterServiceType] = useState<"all" | ServiceType>("all");
+  const [filterActiveStatus, setFilterActiveStatus] = useState<"all" | "active" | "inactive">("all");
 
   const chosenBinList = useMemo(
     () => (Object.keys(selectedBins) as BinType[]).filter((b) => selectedBins[b]),
@@ -871,12 +875,53 @@ export default function KunderPage() {
     await loadCustomers();
   }
 
+    const filteredCustomers = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+
+    return customers.filter((c) => {
+      const normType = (c.customer_type ?? "private") as CustomerType;
+      const normService = (c.service_type ?? "single") as ServiceType;
+      const bins = binsByCustomer[c.id] ?? [];
+
+      const hasActiveBins = bins.some((b) => b.is_active !== false);
+      const hasInactiveBins = bins.some((b) => b.is_active === false);
+
+      const matchesSearch =
+        !q ||
+        [c.name ?? "", c.address ?? "", c.city ?? "", c.phone ?? "", c.email ?? ""]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+
+      const matchesCustomerType =
+        filterCustomerType === "all" || normType === filterCustomerType;
+
+      const matchesServiceType =
+        filterServiceType === "all" || normService === filterServiceType;
+
+      const matchesActiveStatus =
+        filterActiveStatus === "all" ||
+        (filterActiveStatus === "active" && hasActiveBins) ||
+        (filterActiveStatus === "inactive" && !hasActiveBins && hasInactiveBins) ||
+        (filterActiveStatus === "inactive" && bins.length > 0 && bins.every((b) => b.is_active === false));
+
+      return (
+        matchesSearch &&
+        matchesCustomerType &&
+        matchesServiceType &&
+        matchesActiveStatus
+      );
+    });
+  }, [customers, binsByCustomer, searchTerm, filterCustomerType, filterServiceType, filterActiveStatus]);
+
   const groups = useMemo(() => {
     const normType = (t: CustomerType | null) => t ?? "private";
     const normService = (s: ServiceType | null) => s ?? "single";
 
     const mk = (type: CustomerType, service: ServiceType) =>
-      customers.filter((c) => normType(c.customer_type) === type && normService(c.service_type) === service);
+      filteredCustomers.filter(
+        (c) => normType(c.customer_type) === type && normService(c.service_type) === service
+      );
 
     return {
       private_single: mk("private", "single"),
@@ -884,7 +929,7 @@ export default function KunderPage() {
       business_single: mk("business", "single"),
       business_sub: mk("business", "subscription"),
     };
-  }, [customers]);
+  }, [filteredCustomers]);
 
   function renderBinStatus(customerId: string, binType: BinType) {
     const key = `${customerId}__${binType}`;
@@ -1644,10 +1689,86 @@ export default function KunderPage() {
           </button>
         </div>
 
-        <div style={{ marginTop: 32 }}>
+                <div style={{ marginTop: 32 }}>
           <h2 style={styles.h2}>Kundeliste</h2>
 
-          <div style={{ display: "grid", gap: 20 }}>
+          <div style={styles.card}>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div>
+                <label style={styles.label}>Søg kunde</label>
+                <input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Søg på navn, adresse, by, telefon eller email"
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={styles.filterGrid}>
+                <div>
+                  <label style={styles.label}>Kundetype</label>
+                  <select
+                    value={filterCustomerType}
+                    onChange={(e) => setFilterCustomerType(e.target.value as "all" | CustomerType)}
+                    style={styles.select}
+                  >
+                    <option value="all">Alle</option>
+                    <option value="private">Privat</option>
+                    <option value="business">Erhverv</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={styles.label}>Service</label>
+                  <select
+                    value={filterServiceType}
+                    onChange={(e) => setFilterServiceType(e.target.value as "all" | ServiceType)}
+                    style={styles.select}
+                  >
+                    <option value="all">Alle</option>
+                    <option value="single">Enkelt</option>
+                    <option value="subscription">Abonnement</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={styles.label}>Status</label>
+                  <select
+                    value={filterActiveStatus}
+                    onChange={(e) =>
+                      setFilterActiveStatus(e.target.value as "all" | "active" | "inactive")
+                    }
+                    style={styles.select}
+                  >
+                    <option value="all">Alle</option>
+                    <option value="active">Aktive</option>
+                    <option value="inactive">Kun i bero</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={styles.pill}>
+                  {filteredCustomers.length} kunde{filteredCustomers.length === 1 ? "" : "r"} fundet
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setFilterCustomerType("all");
+                    setFilterServiceType("all");
+                    setFilterActiveStatus("all");
+                  }}
+                  style={{ ...styles.smallBtn, marginLeft: 0 }}
+                >
+                  Nulstil filtre
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 20, marginTop: 20 }}>
             {renderGroupCard("private_single", groups.private_single)}
             {renderGroupCard("private_sub", groups.private_sub)}
             {renderGroupCard("business_single", groups.business_single)}
@@ -1719,6 +1840,20 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#fff",
     outline: "none",
   },
+select: {
+  width: "100%",
+  padding: "12px 12px",
+  borderRadius: 12,
+  border: "1px solid #2e2e2e",
+  background: "#1c1c1c",
+  color: "#fff",
+  outline: "none",
+},
+filterGrid: {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+},
   formGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
