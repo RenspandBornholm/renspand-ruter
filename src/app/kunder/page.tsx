@@ -71,17 +71,6 @@ type CustomerDocInfo = {
   routeDate: string | null;
 };
 
-type GroupTheme = {
-  icon: string;
-  label: string;
-  border: string;
-  bg: string;
-  glow: string;
-  chipBg: string;
-  chipBorder: string;
-  chipColor: string;
-};
-
 const BIN_LABEL: Record<BinType, string> = {
   madaffald: "Madaffald",
   rest_plast: "Rest + plast",
@@ -97,49 +86,6 @@ const BIN_ICON: Record<BinType, string> = {
 };
 
 const FREQS: Freq[] = [1, 2, 3, 6];
-
-const GROUP_THEMES: Record<string, GroupTheme> = {
-  private_single: {
-    icon: "🏠",
-    label: "Privat · Enkelt",
-    border: "#cfcfcf",
-    bg: "rgba(255,255,255,0.03)",
-    glow: "rgba(255,255,255,0.08)",
-    chipBg: "rgba(255,255,255,0.06)",
-    chipBorder: "#666",
-    chipColor: "#f3f3f3",
-  },
-  private_sub: {
-    icon: "🔁",
-    label: "Privat · Abonnement",
-    border: "#2ecc71",
-    bg: "rgba(46,204,113,0.06)",
-    glow: "rgba(46,204,113,0.10)",
-    chipBg: "rgba(46,204,113,0.10)",
-    chipBorder: "#2ecc71",
-    chipColor: "#dff7e8",
-  },
-  business_single: {
-    icon: "🏢",
-    label: "Erhverv · Enkelt",
-    border: "#4ea1ff",
-    bg: "rgba(78,161,255,0.06)",
-    glow: "rgba(78,161,255,0.10)",
-    chipBg: "rgba(78,161,255,0.10)",
-    chipBorder: "#4ea1ff",
-    chipColor: "#dbeeff",
-  },
-  business_sub: {
-    icon: "📅",
-    label: "Erhverv · Abonnement",
-    border: "#b57cff",
-    bg: "rgba(181,124,255,0.07)",
-    glow: "rgba(181,124,255,0.10)",
-    chipBg: "rgba(181,124,255,0.12)",
-    chipBorder: "#b57cff",
-    chipColor: "#f0e2ff",
-  },
-};
 
 function formatYMDFromISO(iso: string) {
   const [y, m, d] = iso.slice(0, 10).split("-");
@@ -279,6 +225,28 @@ function getCustomerTypeChipStyle(service: ServiceType): React.CSSProperties {
   };
 }
 
+function getCustomerTypeTheme(service: ServiceType) {
+  if (service === "subscription") {
+    return {
+      border: "#2ecc71",
+      bg: "rgba(46,204,113,0.12)",
+      color: "#dff7e8",
+      label: "Abonnement",
+    };
+  }
+
+  return {
+    border: "#777",
+    bg: "rgba(255,255,255,0.05)",
+    color: "#f3f3f3",
+    label: "Enkelt",
+  };
+}
+
+function getCustomerTypeLabelDa(type: CustomerType | null) {
+  return (type ?? "private") === "business" ? "Erhverv" : "Privat";
+}
+
 export default function KunderPage() {
   const router = useRouter();
 
@@ -345,6 +313,7 @@ export default function KunderPage() {
   const [editEmail, setEditEmail] = useState("");
   const [editServiceType, setEditServiceType] = useState<ServiceType>("single");
   const [editCustomerType, setEditCustomerType] = useState<CustomerType>("private");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCustomerType, setFilterCustomerType] = useState<"all" | CustomerType>("all");
   const [filterServiceType, setFilterServiceType] = useState<"all" | ServiceType>("all");
@@ -875,7 +844,7 @@ export default function KunderPage() {
     await loadCustomers();
   }
 
-    const filteredCustomers = useMemo(() => {
+  const filteredCustomers = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
 
     return customers.filter((c) => {
@@ -905,31 +874,35 @@ export default function KunderPage() {
         (filterActiveStatus === "inactive" && !hasActiveBins && hasInactiveBins) ||
         (filterActiveStatus === "inactive" && bins.length > 0 && bins.every((b) => b.is_active === false));
 
-      return (
-        matchesSearch &&
-        matchesCustomerType &&
-        matchesServiceType &&
-        matchesActiveStatus
-      );
+      return matchesSearch && matchesCustomerType && matchesServiceType && matchesActiveStatus;
     });
   }, [customers, binsByCustomer, searchTerm, filterCustomerType, filterServiceType, filterActiveStatus]);
 
-  const groups = useMemo(() => {
-    const normType = (t: CustomerType | null) => t ?? "private";
-    const normService = (s: ServiceType | null) => s ?? "single";
-
-    const mk = (type: CustomerType, service: ServiceType) =>
-      filteredCustomers.filter(
-        (c) => normType(c.customer_type) === type && normService(c.service_type) === service
-      );
-
+  const groupedFilteredCustomers = useMemo(() => {
     return {
-      private_single: mk("private", "single"),
-      private_sub: mk("private", "subscription"),
-      business_single: mk("business", "single"),
-      business_sub: mk("business", "subscription"),
+      private_single: filteredCustomers.filter(
+        (c) => (c.customer_type ?? "private") === "private" && (c.service_type ?? "single") === "single"
+      ),
+      private_sub: filteredCustomers.filter(
+        (c) => (c.customer_type ?? "private") === "private" && (c.service_type ?? "single") === "subscription"
+      ),
+      business_single: filteredCustomers.filter(
+        (c) => (c.customer_type ?? "private") === "business" && (c.service_type ?? "single") === "single"
+      ),
+      business_sub: filteredCustomers.filter(
+        (c) => (c.customer_type ?? "private") === "business" && (c.service_type ?? "single") === "subscription"
+      ),
     };
   }, [filteredCustomers]);
+
+  const flatSortedFilteredCustomers = useMemo(() => {
+    return [
+      ...groupedFilteredCustomers.private_single,
+      ...groupedFilteredCustomers.private_sub,
+      ...groupedFilteredCustomers.business_single,
+      ...groupedFilteredCustomers.business_sub,
+    ];
+  }, [groupedFilteredCustomers]);
 
   function renderBinStatus(customerId: string, binType: BinType) {
     const key = `${customerId}__${binType}`;
@@ -977,9 +950,9 @@ export default function KunderPage() {
         style={{
           marginTop: 14,
           padding: 14,
-          borderRadius: 14,
-          border: "1px solid #2f2f2f",
-          background: "#101010",
+          borderRadius: 16,
+          border: "1px solid #262626",
+          background: "rgba(8,8,8,0.9)",
         }}
       >
         <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 12 }}>Rediger kunde</div>
@@ -1135,11 +1108,11 @@ export default function KunderPage() {
       <div
         style={{
           marginTop: 8,
-          padding: 8,
+          padding: 10,
           borderRadius: 12,
           border: "1px solid #2b2b2b",
-          background: "#111",
-          maxWidth: 220,
+          background: "#101010",
+          maxWidth: 260,
         }}
       >
         <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.9 }}>
@@ -1147,7 +1120,7 @@ export default function KunderPage() {
         </div>
 
         {doc.note ? (
-          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, whiteSpace: "pre-wrap" }}>{doc.note}</div>
+          <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, whiteSpace: "pre-wrap" }}>{doc.note}</div>
         ) : null}
 
         {imageUrl ? (
@@ -1171,13 +1144,13 @@ export default function KunderPage() {
     const bins = binsByCustomer[c.id] ?? [];
 
     return (
-      <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #262626" }}>
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         {editingCustomerId === c.id ? renderEditForm(c.id) : null}
 
         {renderLatestDocumentation(c.id)}
 
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontWeight: 800, marginBottom: 8, opacity: 0.9 }}>Spande</div>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontWeight: 800, marginBottom: 10, opacity: 0.95 }}>Spande</div>
 
           {bins.length ? (
             <div style={{ display: "grid", gap: 10 }}>
@@ -1191,7 +1164,7 @@ export default function KunderPage() {
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontWeight: 900 }}>
                         {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
-                        <span style={{ opacity: 0.85, fontWeight: 500 }}>
+                        <span style={{ opacity: 0.8, fontWeight: 500 }}>
                           {" "}
                           · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
                         </span>
@@ -1268,257 +1241,150 @@ export default function KunderPage() {
     );
   }
 
-  function renderTable(list: CustomerRow[]) {
-    if (list.length === 0) return <div style={{ opacity: 0.75, padding: 12 }}>Ingen kunder her endnu.</div>;
+  function renderCustomerCard(c: CustomerRow) {
+    const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
+    const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
+    const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
+    const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
+    const service = (c.service_type ?? "single") as ServiceType;
+    const customerType = (c.customer_type ?? "private") as CustomerType;
+    const isExpanded = !!expandedCustomers[c.id];
+    const bins = binsByCustomer[c.id] ?? [];
+    const activeBins = bins.filter((b) => b.is_active !== false);
+    const inactiveBins = bins.filter((b) => b.is_active === false);
+    const theme = getCustomerTypeTheme(service);
+    const hasHistory = !!latestDocByCustomer[c.id];
 
     return (
-      <div style={{ display: "grid", gap: 12 }}>
-        {list.map((c) => {
-          const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
-          const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
-          const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
-          const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
-          const service = (c.service_type ?? "single") as ServiceType;
-          const isExpanded = !!expandedCustomers[c.id];
+      <div style={styles.customerShell} key={c.id}>
+        <div style={styles.customerShellGlow} />
 
-          return (
-            <div key={c.id} style={styles.customerCardDesktop}>
-              <div style={styles.customerHeaderRow}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => toggleCustomerExpanded(c.id)}
-                      style={styles.expandBtn}
-                    >
-                      {isExpanded ? "▴" : "▾"}
-                    </button>
+        <div style={styles.customerCardTop}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={styles.customerTopLine}>
+              <div style={styles.customerName}>{c.name}</div>
 
-                    <div style={{ fontWeight: 900, fontSize: 22 }}>{c.name}</div>
+              <div style={styles.customerTopBadges}>
+                <span
+                  style={{
+                    ...styles.cardBadge,
+                    border: `1px solid ${theme.border}`,
+                    background: theme.bg,
+                    color: theme.color,
+                  }}
+                >
+                  {theme.label}
+                </span>
 
-                    <span style={getCustomerTypeChipStyle(service)}>{getCustomerTypeLabel(service)}</span>
-                  </div>
+                <span style={styles.cardBadgeMuted}>{getCustomerTypeLabelDa(customerType)}</span>
 
-                  <div style={{ marginTop: 6, opacity: 0.88 }}>
-                    {c.address}, {c.city}
-                  </div>
-
-                  {c.phone || c.email ? (
-                    <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13, opacity: 0.85 }}>
-                      {c.phone ? <span>📞 {c.phone}</span> : null}
-                      {c.email ? <span>✉️ {c.email}</span> : null}
-                    </div>
-                  ) : null}
-
-                  {lastDoneYMD ? (
-                    <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <span style={styles.pill}>Rengjort d. {lastDoneYMD}</span>
-                      {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
-                  )}
-                </div>
-
-                <div style={styles.actionsWrap}>
-                  <button
-                    onClick={() => startEditCustomer(c)}
-                    style={{
-                      ...styles.smallBtn,
-                      border: "1px solid #4ea1ff",
-                      background: "#102033",
-                      color: "#dbeeff",
-                      marginLeft: 0,
-                    }}
-                  >
-                    Rediger
-                  </button>
-
-                  <button
-                    onClick={() => router.push(`/kunder/${c.id}/historik`)}
-                    style={{ ...styles.smallBtn, marginLeft: 0 }}
-                  >
-                    {latestDocByCustomer[c.id] ? "Historik 📷" : "Historik"}
-                  </button>
-
-                  <button
-                    onClick={() => geocodeCustomer(c)}
-                    disabled={!c.address || !c.city}
-                    style={{
-                      ...styles.smallBtn,
-                      opacity: !c.address || !c.city ? 0.45 : 1,
-                      marginLeft: 0,
-                    }}
-                  >
-                    {hasCoords ? "Opdater koordinater" : "Find koordinater"}
-                  </button>
-
-                  <button
-                    onClick={() => deleteCustomer(c.id)}
-                    style={{ ...styles.smallBtn, ...styles.dangerBtn, marginLeft: 0 }}
-                  >
-                    Slet
-                  </button>
-                </div>
-              </div>
-
-              {isExpanded ? renderExpandedContent(c, service) : null}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  function renderCards(list: CustomerRow[]) {
-    if (list.length === 0) return <div style={{ opacity: 0.75, padding: 12 }}>Ingen kunder her endnu.</div>;
-
-    return (
-      <div style={{ display: "grid", gap: 12 }}>
-        {list.map((c) => {
-          const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
-          const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
-          const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
-          const ago = lastDoneIso ? daysSince(lastDoneIso) : null;
-          const service = (c.service_type ?? "single") as ServiceType;
-          const isExpanded = !!expandedCustomers[c.id];
-
-          return (
-            <div key={c.id} style={styles.mobileCard}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => toggleCustomerExpanded(c.id)}
-                      style={styles.expandBtn}
-                    >
-                      {isExpanded ? "▴" : "▾"}
-                    </button>
-
-                    <div style={{ fontWeight: 900, fontSize: 18 }}>{c.name}</div>
-                  </div>
-
-                  <div style={{ marginTop: 6, opacity: 0.9 }}>
-                    {c.address}, {c.city}
-                  </div>
-
-                  {c.phone || c.email ? (
-                    <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13, opacity: 0.85 }}>
-                      {c.phone ? <span>📞 {c.phone}</span> : null}
-                      {c.email ? <span>✉️ {c.email}</span> : null}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div style={getCustomerTypeChipStyle(service)}>{getCustomerTypeLabel(service)}</div>
-              </div>
-
-              <div style={{ marginTop: 10 }}>
                 {lastDoneYMD ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <span style={styles.pill}>Rengjort d. {lastDoneYMD}</span>
-                    {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
-                  </div>
+                  <span style={styles.cardBadgeMuted}>Sidst: {lastDoneYMD}</span>
                 ) : (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>Ikke rengjort endnu</div>
+                  <span style={styles.cardBadgeMuted}>Ingen historik</span>
                 )}
               </div>
-
-              <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  onClick={() => startEditCustomer(c)}
-                  style={{
-                    ...styles.smallBtn,
-                    border: "1px solid #4ea1ff",
-                    background: "#102033",
-                    color: "#dbeeff",
-                    marginLeft: 0,
-                  }}
-                >
-                  Rediger
-                </button>
-
-                <button
-                  onClick={() => router.push(`/kunder/${c.id}/historik`)}
-                  style={{ ...styles.smallBtn, marginLeft: 0 }}
-                >
-                  {latestDocByCustomer[c.id] ? "Historik 📷" : "Historik"}
-                </button>
-
-                <button
-                  onClick={() => geocodeCustomer(c)}
-                  disabled={!c.address || !c.city}
-                  style={{
-                    ...styles.smallBtn,
-                    opacity: !c.address || !c.city ? 0.45 : 1,
-                    marginLeft: 0,
-                  }}
-                >
-                  {hasCoords ? "Opdater koordinater" : "Find koordinater"}
-                </button>
-
-                <button
-                  onClick={() => deleteCustomer(c.id)}
-                  style={{ ...styles.smallBtn, ...styles.dangerBtn, marginLeft: 0 }}
-                >
-                  Slet
-                </button>
-              </div>
-
-              {isExpanded ? renderExpandedContent(c, service) : null}
             </div>
-          );
-        })}
+
+            <div style={styles.customerAddress}>
+              {c.address}, {c.city}
+            </div>
+
+            {(c.phone || c.email) && (
+              <div style={styles.customerContactRow}>
+                {c.phone ? <span style={styles.contactText}>📞 {c.phone}</span> : null}
+                {c.email ? <span style={styles.contactText}>✉️ {c.email}</span> : null}
+              </div>
+            )}
+
+            <div style={styles.customerMetaRow}>
+              {activeBins.slice(0, 3).map((b) => (
+                <span key={`${c.id}-${b.id}`} style={styles.binMiniBadge}>
+                  {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
+                </span>
+              ))}
+
+              {activeBins.length > 3 ? (
+                <span style={styles.cardBadgeMuted}>+{activeBins.length - 3} flere</span>
+              ) : null}
+
+              {inactiveBins.length > 0 ? (
+                <span style={styles.cardBadgeWarning}>
+                  {inactiveBins.length} i bero
+                </span>
+              ) : null}
+
+              {!hasCoords ? (
+                <span style={styles.cardBadgeDanger}>Mangler koordinater</span>
+              ) : null}
+
+              {ago !== null ? <span style={doneBadgeStyle(ago)}>for {ago} dage siden</span> : null}
+            </div>
+          </div>
+
+          <div style={styles.cardActionArea}>
+            <button
+              onClick={() => router.push(`/kunder/${c.id}/historik`)}
+              style={{
+                ...styles.cardActionBtn,
+                ...(hasHistory ? styles.cardActionBtnGreen : {}),
+              }}
+            >
+              {hasHistory ? "Historik 📷" : "Historik"}
+            </button>
+
+            <button
+              onClick={() => startEditCustomer(c)}
+              style={{
+                ...styles.cardActionBtn,
+                ...styles.cardActionBtnBlue,
+              }}
+            >
+              Rediger
+            </button>
+
+            <button
+              onClick={() => geocodeCustomer(c)}
+              disabled={!c.address || !c.city}
+              style={{
+                ...styles.cardActionBtn,
+                opacity: !c.address || !c.city ? 0.45 : 1,
+              }}
+            >
+              {hasCoords ? "Opdater koordinater" : "Find koordinater"}
+            </button>
+
+            <button
+              onClick={() => deleteCustomer(c.id)}
+              style={{
+                ...styles.cardActionBtn,
+                ...styles.cardActionBtnDanger,
+              }}
+            >
+              Slet
+            </button>
+
+            <button
+              type="button"
+              onClick={() => toggleCustomerExpanded(c.id)}
+              style={styles.cardExpandBtn}
+            >
+              {isExpanded ? "▴" : "▾"}
+            </button>
+          </div>
+        </div>
+
+        {isExpanded ? renderExpandedContent(c, service) : null}
       </div>
     );
   }
 
-  function renderGroupCard(groupKey: keyof typeof GROUP_THEMES, list: CustomerRow[]) {
-    const theme = GROUP_THEMES[groupKey];
+  function renderCustomerList(list: CustomerRow[]) {
+    if (list.length === 0) {
+      return <div style={{ opacity: 0.72, padding: 16 }}>Ingen kunder matcher filtrene.</div>;
+    }
 
-    return (
-      <div
-        style={{
-          ...styles.groupCard,
-          border: `1px solid ${theme.glow}`,
-          background: theme.bg,
-          boxShadow: `inset 0 1px 0 ${theme.glow}`,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: 4,
-            background: theme.border,
-            borderRadius: 999,
-            marginBottom: 14,
-          }}
-        />
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-          <div style={{ fontSize: 22, lineHeight: 1 }}>{theme.icon}</div>
-
-          <div style={{ fontWeight: 900, fontSize: 22, color: "#fff" }}>{theme.label}</div>
-
-          <span
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: `1px solid ${theme.chipBorder}`,
-              background: theme.chipBg,
-              color: theme.chipColor,
-              fontSize: 12,
-              fontWeight: 900,
-            }}
-          >
-            {list.length} kunder
-          </span>
-        </div>
-
-        {isMobile ? renderCards(list) : renderTable(list)}
-      </div>
-    );
+    return <div style={{ display: "grid", gap: 14 }}>{list.map((c) => renderCustomerCard(c))}</div>;
   }
 
   return (
@@ -1689,90 +1555,90 @@ export default function KunderPage() {
           </button>
         </div>
 
-                <div style={{ marginTop: 32 }}>
-          <h2 style={styles.h2}>Kundeliste</h2>
-
-          <div style={styles.card}>
-            <div style={{ display: "grid", gap: 12 }}>
-              <div>
-                <label style={styles.label}>Søg kunde</label>
-                <input
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Søg på navn, adresse, by, telefon eller email"
-                  style={styles.input}
-                />
+        <div style={{ marginTop: 34 }}>
+          <div style={styles.listHeaderRow}>
+            <div>
+              <h2 style={{ ...styles.h2, marginBottom: 6 }}>Kundeliste</h2>
+              <div style={{ opacity: 0.72, fontSize: 14 }}>
+                Søg, filtrér og administrér dine kunder
               </div>
+            </div>
 
-              <div style={styles.filterGrid}>
-                <div>
-                  <label style={styles.label}>Kundetype</label>
-                  <select
-                    value={filterCustomerType}
-                    onChange={(e) => setFilterCustomerType(e.target.value as "all" | CustomerType)}
-                    style={styles.select}
-                  >
-                    <option value="all">Alle</option>
-                    <option value="private">Privat</option>
-                    <option value="business">Erhverv</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>Service</label>
-                  <select
-                    value={filterServiceType}
-                    onChange={(e) => setFilterServiceType(e.target.value as "all" | ServiceType)}
-                    style={styles.select}
-                  >
-                    <option value="all">Alle</option>
-                    <option value="single">Enkelt</option>
-                    <option value="subscription">Abonnement</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={styles.label}>Status</label>
-                  <select
-                    value={filterActiveStatus}
-                    onChange={(e) =>
-                      setFilterActiveStatus(e.target.value as "all" | "active" | "inactive")
-                    }
-                    style={styles.select}
-                  >
-                    <option value="all">Alle</option>
-                    <option value="active">Aktive</option>
-                    <option value="inactive">Kun i bero</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={styles.pill}>
-                  {filteredCustomers.length} kunde{filteredCustomers.length === 1 ? "" : "r"} fundet
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setFilterCustomerType("all");
-                    setFilterServiceType("all");
-                    setFilterActiveStatus("all");
-                  }}
-                  style={{ ...styles.smallBtn, marginLeft: 0 }}
-                >
-                  Nulstil filtre
-                </button>
-              </div>
+            <div style={styles.customerCountPill}>
+              {filteredCustomers.length} kunde{filteredCustomers.length === 1 ? "" : "r"}
             </div>
           </div>
 
-          <div style={{ display: "grid", gap: 20, marginTop: 20 }}>
-            {renderGroupCard("private_single", groups.private_single)}
-            {renderGroupCard("private_sub", groups.private_sub)}
-            {renderGroupCard("business_single", groups.business_single)}
-            {renderGroupCard("business_sub", groups.business_sub)}
+          <div style={styles.searchPanel}>
+            <div style={styles.searchInputWrap}>
+              <span style={styles.searchIcon}>⌕</span>
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Søg kunde"
+                style={styles.searchInput}
+              />
+            </div>
+
+            <div style={styles.filterGrid}>
+              <div>
+                <label style={styles.label}>Kundetype</label>
+                <select
+                  value={filterCustomerType}
+                  onChange={(e) => setFilterCustomerType(e.target.value as "all" | CustomerType)}
+                  style={styles.select}
+                >
+                  <option value="all">Alle</option>
+                  <option value="private">Privat</option>
+                  <option value="business">Erhverv</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={styles.label}>Service</label>
+                <select
+                  value={filterServiceType}
+                  onChange={(e) => setFilterServiceType(e.target.value as "all" | ServiceType)}
+                  style={styles.select}
+                >
+                  <option value="all">Alle</option>
+                  <option value="single">Enkelt</option>
+                  <option value="subscription">Abonnement</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={styles.label}>Status</label>
+                <select
+                  value={filterActiveStatus}
+                  onChange={(e) => setFilterActiveStatus(e.target.value as "all" | "active" | "inactive")}
+                  style={styles.select}
+                >
+                  <option value="all">Alle</option>
+                  <option value="active">Aktive</option>
+                  <option value="inactive">Kun i bero</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchTerm("");
+                  setFilterCustomerType("all");
+                  setFilterServiceType("all");
+                  setFilterActiveStatus("all");
+                }}
+                style={{ ...styles.smallBtn, marginLeft: 0 }}
+              >
+                Nulstil filtre
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            {renderCustomerList(flatSortedFilteredCustomers)}
           </div>
         </div>
       </div>
@@ -1784,7 +1650,7 @@ export default function KunderPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
-    maxWidth: 1100,
+    maxWidth: 1180,
     margin: "0 auto",
     padding: "28px 16px 60px",
     color: "#ededed",
@@ -1796,19 +1662,20 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
   },
   h1: { fontSize: 44, margin: 0, letterSpacing: 0.2 },
-  h2: { fontSize: 28, margin: "0 0 12px" },
+  h2: { fontSize: 30, margin: "0 0 12px" },
   btn: {
     padding: "10px 14px",
-    borderRadius: 10,
+    borderRadius: 12,
     border: "1px solid #2a2a2a",
     background: "#171717",
     color: "#fff",
     cursor: "pointer",
+    fontWeight: 800,
   },
   error: {
     marginTop: 12,
     padding: "10px 12px",
-    borderRadius: 10,
+    borderRadius: 12,
     border: "1px solid #6b1b1b",
     background: "#2a0f0f",
     color: "#ffb4b4",
@@ -1817,43 +1684,91 @@ const styles: Record<string, React.CSSProperties> = {
 
   card: {
     marginTop: 18,
-    border: "1px solid #2b2b2b",
-    borderRadius: 16,
-    background: "rgba(20,20,20,0.8)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 22,
+    background: "linear-gradient(180deg, rgba(18,18,18,0.95) 0%, rgba(10,10,10,0.92) 100%)",
+    padding: 20,
+    boxShadow: "0 14px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)",
+  },
+
+  searchPanel: {
+    marginTop: 18,
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 22,
+    background: "linear-gradient(180deg, rgba(16,16,16,0.95) 0%, rgba(10,10,10,0.92) 100%)",
     padding: 18,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+    boxShadow: "0 14px 40px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.03)",
+    display: "grid",
+    gap: 14,
   },
-  groupCard: {
-    border: "1px solid #2b2b2b",
-    borderRadius: 18,
-    background: "rgba(16,16,16,0.75)",
-    padding: 16,
+
+  listHeaderRow: {
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
   },
+
+  customerCountPill: {
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: "1px solid rgba(46,204,113,0.45)",
+    background: "rgba(46,204,113,0.08)",
+    color: "#dff7e8",
+    fontSize: 13,
+    fontWeight: 900,
+  },
+
   sectionLabel: { fontWeight: 700, opacity: 0.95, marginBottom: 10 },
-  label: { display: "block", marginBottom: 6, opacity: 0.9 },
+  label: { display: "block", marginBottom: 6, opacity: 0.9, fontSize: 13 },
   input: {
     width: "100%",
     padding: "12px 12px",
-    borderRadius: 12,
+    borderRadius: 14,
     border: "1px solid #2e2e2e",
-    background: "#1c1c1c",
+    background: "#171717",
     color: "#fff",
     outline: "none",
   },
-select: {
-  width: "100%",
-  padding: "12px 12px",
-  borderRadius: 12,
-  border: "1px solid #2e2e2e",
-  background: "#1c1c1c",
-  color: "#fff",
-  outline: "none",
-},
-filterGrid: {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: 12,
-},
+  select: {
+    width: "100%",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid #2e2e2e",
+    background: "#171717",
+    color: "#fff",
+    outline: "none",
+  },
+  searchInputWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "#141414",
+    borderRadius: 16,
+    padding: "0 12px",
+    minHeight: 58,
+  },
+  searchIcon: {
+    opacity: 0.78,
+    fontSize: 22,
+    lineHeight: 1,
+  },
+  searchInput: {
+    width: "100%",
+    height: 56,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    color: "#fff",
+    fontSize: 16,
+  },
+  filterGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 12,
+  },
   formGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -1868,7 +1783,7 @@ filterGrid: {
   serviceCard: {
     textAlign: "left",
     padding: "14px 14px",
-    borderRadius: 16,
+    borderRadius: 18,
     border: "1px solid #2b2b2b",
     background: "#171717",
     cursor: "pointer",
@@ -1883,7 +1798,7 @@ filterGrid: {
 
   binBox: {
     border: "1px solid #2b2b2b",
-    borderRadius: 14,
+    borderRadius: 16,
     background: "#141414",
     padding: "10px 12px",
   },
@@ -1928,9 +1843,9 @@ filterGrid: {
     width: "100%",
     marginTop: 14,
     padding: "14px 14px",
-    borderRadius: 14,
+    borderRadius: 16,
     border: "1px solid #2f2f2f",
-    background: "#3a3a3a",
+    background: "#323232",
     color: "#fff",
     fontWeight: 900,
     cursor: "pointer",
@@ -1938,7 +1853,7 @@ filterGrid: {
 
   smallBtn: {
     padding: "8px 10px",
-    borderRadius: 10,
+    borderRadius: 12,
     border: "1px solid #2f2f2f",
     background: "#1a1a1a",
     color: "#fff",
@@ -1961,7 +1876,7 @@ filterGrid: {
   },
   importBtn: {
     padding: "8px 10px",
-    borderRadius: 10,
+    borderRadius: 12,
     border: "1px solid #2f2f2f",
     background: "#1a1a1a",
     color: "#fff",
@@ -1969,12 +1884,6 @@ filterGrid: {
     fontWeight: 800,
   },
 
-  mobileCard: {
-    border: "1px solid #2b2b2b",
-    borderRadius: 16,
-    background: "rgba(18,18,18,0.86)",
-    padding: 14,
-  },
   mobilePill: {
     padding: "6px 10px",
     borderRadius: 999,
@@ -1985,43 +1894,173 @@ filterGrid: {
     whiteSpace: "nowrap",
     opacity: 0.95,
   },
+
   binLine: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
-    padding: "10px 10px",
+    padding: "12px",
     border: "1px solid #262626",
-    borderRadius: 12,
+    borderRadius: 14,
     background: "#141414",
     flexWrap: "wrap",
   },
-  customerCardDesktop: {
-    border: "1px solid #2b2b2b",
-    borderRadius: 16,
-    background: "#121212",
-    padding: 14,
+
+  customerShell: {
+    position: "relative",
+    borderRadius: 22,
+    overflow: "hidden",
+    border: "1px solid rgba(255,255,255,0.07)",
+    background:
+      "radial-gradient(circle at top right, rgba(46,204,113,0.06), transparent 32%), linear-gradient(180deg, rgba(17,17,17,0.98) 0%, rgba(11,11,11,0.96) 100%)",
+    boxShadow: "0 16px 42px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)",
+    padding: 16,
   },
-  customerHeaderRow: {
+  customerShellGlow: {
+    position: "absolute",
+    inset: 0,
+    pointerEvents: "none",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.018) 0%, rgba(255,255,255,0) 35%)",
+  },
+  customerCardTop: {
+    position: "relative",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    gap: 16,
+    flexWrap: "wrap",
+  },
+  customerTopLine: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
     gap: 12,
     flexWrap: "wrap",
   },
-  actionsWrap: {
+  customerName: {
+    fontSize: 34,
+    fontWeight: 900,
+    lineHeight: 1.05,
+    letterSpacing: -0.4,
+  },
+  customerTopBadges: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  cardBadge: {
+    padding: "7px 11px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+  cardBadgeMuted: {
+    padding: "7px 11px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    border: "1px solid rgba(255,255,255,0.09)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#f1f1f1",
+  },
+  cardBadgeWarning: {
+    padding: "7px 11px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    border: "1px solid rgba(241,196,15,0.5)",
+    background: "rgba(241,196,15,0.10)",
+    color: "#fff0b3",
+  },
+  cardBadgeDanger: {
+    padding: "7px 11px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    border: "1px solid rgba(255,77,79,0.5)",
+    background: "rgba(255,77,79,0.10)",
+    color: "#ffd6d6",
+  },
+  customerAddress: {
+    marginTop: 10,
+    fontSize: 18,
+    lineHeight: 1.35,
+    color: "rgba(255,255,255,0.9)",
+  },
+  customerContactRow: {
+    marginTop: 8,
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  contactText: {
+    fontSize: 13,
+    opacity: 0.88,
+  },
+  customerMetaRow: {
+    marginTop: 12,
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  binMiniBadge: {
+    padding: "7px 11px",
+    borderRadius: 999,
+    border: "1px solid rgba(46,204,113,0.35)",
+    background: "rgba(46,204,113,0.08)",
+    color: "#dff7e8",
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+  },
+  cardActionArea: {
     display: "flex",
     gap: 8,
     flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "flex-end",
+    maxWidth: "100%",
   },
-  expandBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    border: "1px solid #2f2f2f",
-    background: "#171717",
+  cardActionBtn: {
+    padding: "10px 14px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 800,
+    minHeight: 42,
+  },
+  cardActionBtnGreen: {
+    border: "1px solid rgba(46,204,113,0.4)",
+    background: "rgba(46,204,113,0.08)",
+    color: "#dff7e8",
+  },
+  cardActionBtnBlue: {
+    border: "1px solid rgba(78,161,255,0.4)",
+    background: "rgba(78,161,255,0.08)",
+    color: "#dbeeff",
+  },
+  cardActionBtnDanger: {
+    border: "1px solid rgba(255,77,79,0.4)",
+    background: "rgba(255,77,79,0.08)",
+    color: "#ffd6d6",
+  },
+  cardExpandBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
     color: "#fff",
     cursor: "pointer",
     fontWeight: 900,
