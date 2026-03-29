@@ -8,7 +8,7 @@ import AppHeader from "@/app/components/AppHeader";
 
 type ServiceType = "single" | "subscription";
 type CustomerType = "private" | "business";
-type BinType = "madaffald" | "rest_plast" | "pap_papir" | "metal_glas";
+type BinType = "madaffald" | "rest_plast" | "pap_metal";
 type Freq = 1 | 2 | 3 | 6;
 
 type CustomerRow = {
@@ -32,6 +32,7 @@ type BinRow = {
   pickup_day: string | null;
   week_group: string | null;
   frequency_months: number | null;
+  quantity: number | null;
   is_active: boolean | null;
 };
 
@@ -82,21 +83,37 @@ type CustomerGroupMeta = {
   accentText: string;
 };
 
+type BinSelectionState = Record<
+  BinType,
+  {
+    selected: boolean;
+    quantity: 1 | 2 | 3;
+    frequency_months: Freq;
+  }
+>;
+
 const BIN_LABEL: Record<BinType, string> = {
   madaffald: "Madaffald",
   rest_plast: "Rest + plast",
-  pap_papir: "Papir/pap",
-  metal_glas: "Metal/glas",
+  pap_metal: "Papir/pap + metal/glas",
 };
 
 const BIN_ICON: Record<BinType, string> = {
   madaffald: "🍎",
   rest_plast: "🗑️",
-  pap_papir: "📦",
-  metal_glas: "🍾",
+  pap_metal: "♻️",
 };
 
 const FREQS: Freq[] = [1, 2, 3, 6];
+const QUANTITIES: Array<1 | 2 | 3> = [1, 2, 3];
+
+function getInitialBinState(): BinSelectionState {
+  return {
+    madaffald: { selected: false, quantity: 1, frequency_months: 1 },
+    rest_plast: { selected: false, quantity: 1, frequency_months: 1 },
+    pap_metal: { selected: false, quantity: 1, frequency_months: 1 },
+  };
+}
 
 function formatYMDFromISO(iso: string) {
   const [y, m, d] = iso.slice(0, 10).split("-");
@@ -258,26 +275,7 @@ export default function KunderPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
 
-  const [selectedBins, setSelectedBins] = useState<Record<BinType, boolean>>({
-    madaffald: false,
-    rest_plast: false,
-    pap_papir: false,
-    metal_glas: false,
-  });
-
-  const [binSettings, setBinSettings] = useState<
-    Record<
-      BinType,
-      {
-        frequency_months: Freq;
-      }
-    >
-  >({
-    madaffald: { frequency_months: 1 },
-    rest_plast: { frequency_months: 1 },
-    pap_papir: { frequency_months: 1 },
-    metal_glas: { frequency_months: 1 },
-  });
+  const [binSelections, setBinSelections] = useState<BinSelectionState>(getInitialBinState());
 
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [binsByCustomer, setBinsByCustomer] = useState<Record<string, BinRow[]>>({});
@@ -309,8 +307,8 @@ export default function KunderPage() {
   const [filterActiveStatus, setFilterActiveStatus] = useState<"all" | "active" | "inactive">("all");
 
   const chosenBinList = useMemo(
-    () => (Object.keys(selectedBins) as BinType[]).filter((b) => selectedBins[b]),
-    [selectedBins]
+    () => (Object.keys(binSelections) as BinType[]).filter((bin) => binSelections[bin].selected),
+    [binSelections]
   );
 
   function toggleCustomerExpanded(customerId: string) {
@@ -321,7 +319,33 @@ export default function KunderPage() {
   }
 
   function toggleBin(bin: BinType) {
-    setSelectedBins((prev) => ({ ...prev, [bin]: !prev[bin] }));
+    setBinSelections((prev) => ({
+      ...prev,
+      [bin]: {
+        ...prev[bin],
+        selected: !prev[bin].selected,
+      },
+    }));
+  }
+
+  function updateBinFrequency(bin: BinType, freq: Freq) {
+    setBinSelections((prev) => ({
+      ...prev,
+      [bin]: {
+        ...prev[bin],
+        frequency_months: freq,
+      },
+    }));
+  }
+
+  function updateBinQuantity(bin: BinType, quantity: 1 | 2 | 3) {
+    setBinSelections((prev) => ({
+      ...prev,
+      [bin]: {
+        ...prev[bin],
+        quantity,
+      },
+    }));
   }
 
   function startEditCustomer(c: CustomerRow) {
@@ -389,13 +413,6 @@ export default function KunderPage() {
     }
   }
 
-  function updateBinSetting(bin: BinType, freq: Freq) {
-    setBinSettings((prev) => ({
-      ...prev,
-      [bin]: { ...prev[bin], frequency_months: freq },
-    }));
-  }
-
   async function loadCustomers() {
     setError(null);
 
@@ -431,7 +448,7 @@ export default function KunderPage() {
 
     const { data: bData, error: bErr } = await supabase
       .from("customer_bins")
-      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months,is_active")
+      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months,quantity,is_active")
       .in("customer_id", ids);
 
     if (bErr) {
@@ -704,7 +721,8 @@ export default function KunderPage() {
         bin_type: bin,
         pickup_day: "Man",
         week_group: "",
-        frequency_months: serviceType === "subscription" ? binSettings[bin].frequency_months : 1,
+        frequency_months: serviceType === "subscription" ? binSelections[bin].frequency_months : 1,
+        quantity: binSelections[bin].quantity,
         is_active: true,
       }));
 
@@ -712,7 +730,7 @@ export default function KunderPage() {
 
       if (binsErr) {
         setError(
-          `${binsErr.message}\n\nTip: Hvis du ser DB-fejl om "bin_type check", så skal dine tilladte værdier matche disse: madaffald, rest_plast, pap_papir, metal_glas.`
+          `${binsErr.message}\n\nTip: Tilladte bin_type værdier skal nu være: madaffald, rest_plast, pap_metal.`
         );
         return;
       }
@@ -724,12 +742,7 @@ export default function KunderPage() {
       setEmail("");
       setServiceType("single");
       setCustomerType("private");
-      setSelectedBins({
-        madaffald: false,
-        rest_plast: false,
-        pap_papir: false,
-        metal_glas: false,
-      });
+      setBinSelections(getInitialBinState());
 
       await loadCustomers();
     } catch (e: any) {
@@ -1183,6 +1196,7 @@ export default function KunderPage() {
                 const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
                 const isActive = b.is_active !== false;
                 const isSingle = service === "single";
+                const qty = Math.max(1, Number(b.quantity ?? 1));
 
                 return (
                   <div key={b.id} style={styles.binLine}>
@@ -1191,7 +1205,7 @@ export default function KunderPage() {
                         {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
                         <span style={{ opacity: 0.8, fontWeight: 500 }}>
                           {" "}
-                          · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
+                          ×{qty} · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
                         </span>
                       </div>
 
@@ -1206,6 +1220,8 @@ export default function KunderPage() {
                         >
                           {isActive ? "Aktiv" : "I bero"}
                         </span>
+
+                        <span style={styles.pill}>Antal: {qty}</span>
 
                         {renderBinStatus(c.id, b.bin_type)}
 
@@ -1323,11 +1339,14 @@ export default function KunderPage() {
             )}
 
             <div style={styles.customerMetaRow}>
-              {activeBins.slice(0, 3).map((b) => (
-                <span key={`${c.id}-${b.id}`} style={styles.binMiniBadge}>
-                  {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
-                </span>
-              ))}
+              {activeBins.slice(0, 3).map((b) => {
+                const qty = Math.max(1, Number(b.quantity ?? 1));
+                return (
+                  <span key={`${c.id}-${b.id}`} style={styles.binMiniBadge}>
+                    {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]} ×{qty}
+                  </span>
+                );
+              })}
 
               {activeBins.length > 3 ? (
                 <span style={styles.cardBadgeMuted}>+{activeBins.length - 3} flere</span>
@@ -1578,12 +1597,19 @@ export default function KunderPage() {
 
             <div style={{ display: "grid", gap: 10 }}>
               {(Object.keys(BIN_LABEL) as BinType[]).map((bin) => {
-                const selected = selectedBins[bin];
+                const selected = binSelections[bin].selected;
+                const quantity = binSelections[bin].quantity;
+                const freq = binSelections[bin].frequency_months;
 
                 return (
                   <div key={bin} style={styles.binBox}>
                     <label style={styles.binHeader}>
-                      <input type="checkbox" checked={selected} onChange={() => toggleBin(bin)} style={styles.checkbox} />
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleBin(bin)}
+                        style={styles.checkbox}
+                      />
                       <span style={styles.binName}>
                         {BIN_ICON[bin]} {BIN_LABEL[bin]}
                       </span>
@@ -1591,17 +1617,36 @@ export default function KunderPage() {
 
                     {selected && (
                       <div style={styles.binSettingsRow}>
+                        <div>
+                          <div style={styles.smallLabel}>Antal</div>
+                          <div style={styles.freqRow}>
+                            {QUANTITIES.map((q) => {
+                              const active = quantity === q;
+                              return (
+                                <button
+                                  type="button"
+                                  key={q}
+                                  onClick={() => updateBinQuantity(bin, q)}
+                                  style={{ ...styles.pillBtn, ...(active ? styles.pillBtnActive : {}) }}
+                                >
+                                  {q} stk.
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
                         {serviceType === "subscription" ? (
                           <div style={{ flex: 1 }}>
                             <div style={styles.smallLabel}>Frekvens</div>
                             <div style={styles.freqRow}>
                               {FREQS.map((f) => {
-                                const active = binSettings[bin].frequency_months === f;
+                                const active = freq === f;
                                 return (
                                   <button
                                     type="button"
                                     key={f}
-                                    onClick={() => updateBinSetting(bin, f)}
+                                    onClick={() => updateBinFrequency(bin, f)}
                                     style={{ ...styles.pillBtn, ...(active ? styles.pillBtnActive : {}) }}
                                   >
                                     {f} md.
@@ -1710,9 +1755,7 @@ export default function KunderPage() {
             {groupedSections.some((g) => g.count > 0) ? (
               groupedSections.map((group) => renderCustomerGroup(group))
             ) : (
-              <div style={styles.emptyState}>
-                Ingen kunder matcher filtrene.
-              </div>
+              <div style={styles.emptyState}>Ingen kunder matcher filtrene.</div>
             )}
           </div>
         </div>
