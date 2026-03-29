@@ -67,6 +67,19 @@ type UpcomingRouteRow = {
   plannedCount: number;
 };
 
+type ActiveBinConfigRow = {
+  customer_id: string;
+  bin_type: string;
+  frequency_months: number | null;
+  is_active: boolean | null;
+};
+
+type ServiceHistoryMiniRow = {
+  customer_id: string;
+  bin_type: string;
+  serviced_at: string;
+};
+
 function toYMD(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -87,10 +100,37 @@ function addDaysYMD(ymd: string, days: number) {
   return toYMD(dt);
 }
 
+function addMonthsYMD(ymd: string, months: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+
+  const originalDay = dt.getDate();
+  dt.setDate(1);
+  dt.setMonth(dt.getMonth() + months);
+
+  const lastDayOfTargetMonth = new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
+  dt.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+
+  return toYMD(dt);
+}
+
 function endOfMonthYMD(ymd: string) {
   const [y, m] = ymd.split("-").map(Number);
   const dt = new Date(y, m ?? 1, 0);
   return toYMD(dt);
+}
+
+function isBinDueByFrequency(
+  lastDoneYMD: string | null,
+  frequencyMonths: number | null,
+  candidateCleaningDateYMD: string
+) {
+  if (!lastDoneYMD) return true;
+
+  const freq = Math.max(1, Number(frequencyMonths ?? 1));
+  const nextAllowedYMD = addMonthsYMD(lastDoneYMD, freq);
+
+  return candidateCleaningDateYMD >= nextAllowedYMD;
 }
 
 function counterBadgeStyle(count: number): React.CSSProperties {
@@ -336,6 +376,7 @@ function overviewCardStyle(tone: "green" | "blue" | "emerald" | "orange"): React
     boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 0 0 1px rgba(255,140,90,0.05)",
   };
 }
+
 function upcomingRouteStyle(row: UpcomingRouteRow, isActive: boolean): React.CSSProperties {
   if (isActive) {
     return {
@@ -473,6 +514,7 @@ export default function KortPage() {
       driveMinutes,
     };
   }, [stops]);
+
   const dayOverview = useMemo(() => {
     const total = stops.length;
     const done = stops.filter((s) => s.status === "done").length;
@@ -622,12 +664,36 @@ export default function KortPage() {
     const uniqueCustomerIds = Array.from(new Set(customerIds));
     const monthStart = `${dateYMD.slice(0, 7)}-01`;
     const monthEnd = endOfMonthYMD(dateYMD);
-
     const pickupDateForToday = addDaysYMD(dateYMD, -1);
-    const pickupWindowStart = addDaysYMD(monthStart, -1);
-    const pickupWindowEnd = addDaysYMD(monthEnd, -1);
 
-    const { data, error } = await supabase
+    const pickupWindowStart = addDaysYMD(monthStart, -1);
+    const futureHorizonDate = addMonthsYMD(dateYMD, 12);
+    const pickupWindowEnd = addDaysYMD(futureHorizonDate, -1);
+
+    const { data: binConfigRows, error: binConfigErr } = await supabase
+      .from("customer_bins")
+      .select("customer_id,bin_type,is_active,frequency_months")
+      .in("customer_id", uniqueCustomerIds)
+      .eq("is_active", true);
+
+    if (binConfigErr) throw binConfigErr;
+
+    const activeBinConfigMap: Record<string, { frequency_months: number | null }> = {};
+    const activeBinTypesByCustomer: Record<string, string[]> = {};
+
+    for (const row of (binConfigRows ?? []) as ActiveBinConfigRow[]) {
+      const key = `${row.customer_id}__${row.bin_type}`;
+      activeBinConfigMap[key] = {
+        frequency_months: row.frequency_months,
+      };
+
+      (activeBinTypesByCustomer[row.customer_id] ||= []);
+      if (!activeBinTypesByCustomer[row.customer_id].includes(row.bin_type)) {
+        activeBinTypesByCustomer[row.customer_id].push(row.bin_type);
+      }
+    }
+
+    const { data: pickupData, error: pickupErr } = await supabase
       .from("bofa_pickups")
       .select("customer_id,bin_type,pickup_date")
       .in("customer_id", uniqueCustomerIds)
@@ -635,44 +701,87 @@ export default function KortPage() {
       .lte("pickup_date", pickupWindowEnd)
       .order("pickup_date", { ascending: true });
 
-    if (error) throw error;
+    if (pickupErr) throw pickupErr;
 
-    const rows = (data ?? []) as PickupRow[];
+    const pickupRows = (pickupData ?? []) as PickupRow[];
 
-    const todayMap: Record<string, string[]> = {};
-    const grouped: Record<string, string[]> = {};
+    const candidateBinTypes = Array.from(new Set(pickupRows.map((r) => r.bin_type)));
 
-    for (const row of rows) {
-      const key = `${row.customer_id}__${row.bin_type}`;
-      const cleaningDate = addDaysYMD(row.pickup_date, 1);
+    const latestDoneByCustomerBin: Record<string, string | null> = {};
 
-      if (!cleaningDate.startsWith(dateYMD.slice(0, 7))) continue;
+    if (candidateBinTypes.length > 0) {
+      const { data: historyRows, error: historyErr } = await supabase
+        .from("service_history")
+        .select("customer_id,bin_type,serviced_at")
+        .in("customer_id", uniqueCustomerIds)
+        .in("bin_type", candidateBinTypes)
+        .eq("status", "done")
+        .order("serviced_at", { ascending: false });
 
-      (grouped[key] ||= []).push(cleaningDate);
+      if (historyErr) throw historyErr;
 
-      if (row.pickup_date === pickupDateForToday) {
-        (todayMap[row.customer_id] ||= []);
-        if (!todayMap[row.customer_id].includes(row.bin_type)) {
-          todayMap[row.customer_id].push(row.bin_type);
+      for (const row of (historyRows ?? []) as ServiceHistoryMiniRow[]) {
+        const key = `${row.customer_id}__${row.bin_type}`;
+        if (latestDoneByCustomerBin[key] === undefined) {
+          latestDoneByCustomerBin[key] = row.serviced_at.slice(0, 10);
         }
       }
     }
 
-    const infoMap: Record<string, BinOpportunityInfo> = {};
-    for (const [key, cleaningDatesRaw] of Object.entries(grouped)) {
-      const cleaningDates = Array.from(new Set(cleaningDatesRaw)).sort();
+    const cleaningDatesByKey: Record<string, string[]> = {};
 
-      const remainingCount = cleaningDates.filter((d) => d >= dateYMD).length;
-      const nextDate = cleaningDates.find((d) => d > dateYMD) ?? null;
+    for (const row of pickupRows) {
+      const key = `${row.customer_id}__${row.bin_type}`;
+      if (!activeBinConfigMap[key]) continue;
+
+      const cleaningDate = addDaysYMD(row.pickup_date, 1);
+      (cleaningDatesByKey[key] ||= []).push(cleaningDate);
+    }
+
+    const todayMap: Record<string, string[]> = {};
+    const infoMap: Record<string, BinOpportunityInfo> = {};
+
+    for (const [key, cleaningDatesRaw] of Object.entries(cleaningDatesByKey)) {
+      const [customerId, binType] = key.split("__");
+      const config = activeBinConfigMap[key];
+      if (!customerId || !binType || !config) continue;
+
+      const lastDoneYMD = latestDoneByCustomerBin[key] ?? null;
+      const uniqueCleaningDates = Array.from(new Set(cleaningDatesRaw)).sort();
+
+      const dueCleaningDates = uniqueCleaningDates.filter((candidateDate) =>
+        isBinDueByFrequency(lastDoneYMD, config.frequency_months, candidateDate)
+      );
+
+      const remainingCount = dueCleaningDates.filter(
+        (d) => d.startsWith(dateYMD.slice(0, 7)) && d >= dateYMD
+      ).length;
+
+      const nextDate = dueCleaningDates.find((d) => d > dateYMD) ?? null;
 
       infoMap[key] = {
         remainingCount,
         nextDate,
       };
+
+      const todayCleaningDate = addDaysYMD(pickupDateForToday, 1);
+      const isDueToday = dueCleaningDates.includes(todayCleaningDate);
+
+      if (isDueToday) {
+        (todayMap[customerId] ||= []);
+        if (!todayMap[customerId].includes(binType)) {
+          todayMap[customerId].push(binType);
+        }
+      }
     }
 
     setTodayBinsByCustomer(todayMap);
     setBinOpportunityByCustomerBin(infoMap);
+  }
+
+  async function refreshBinOpportunityForCurrentStops() {
+    const ids = Array.from(new Set(stops.map((s) => s.customer_id).filter(Boolean)));
+    await loadBinOpportunityData(routeDate, ids);
   }
 
   async function persistStopOrder(orderedStops: RouteStop[]) {
@@ -830,7 +939,7 @@ export default function KortPage() {
                   if (s.status === "done") {
                     counterHtml = info?.nextDate
                       ? `<div style="margin-top:6px;font-size:12px;font-weight:900;color:#15803d;">Næste: ${info.nextDate}</div>`
-                      : `<div style="margin-top:6px;font-size:12px;font-weight:900;color:#15803d;">Færdig for måneden</div>`;
+                      : `<div style="margin-top:6px;font-size:12px;font-weight:900;color:#15803d;">Ingen ny dato endnu</div>`;
                   } else if (info?.remainingCount) {
                     const bg =
                       info.remainingCount <= 1
@@ -1081,245 +1190,53 @@ export default function KortPage() {
 
     await persistStopOrder(moved);
   }
-function buildDistanceMatrix(route: RouteStop[], hq: { lat: number; lng: number }) {
-  const n = route.length;
-  const points = route.map((s) => ({
-    lat: s.customer!.lat!,
-    lng: s.customer!.lng!,
-  }));
 
-  const hqToStop = points.map((p) => distanceKm(hq.lat, hq.lng, p.lat, p.lng));
-  const stopToHq = points.map((p) => distanceKm(p.lat, p.lng, hq.lat, hq.lng));
+  function buildDistanceMatrix(route: RouteStop[], hq: { lat: number; lng: number }) {
+    const n = route.length;
+    const points = route.map((s) => ({
+      lat: s.customer!.lat!,
+      lng: s.customer!.lng!,
+    }));
 
-  const between: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
+    const hqToStop = points.map((p) => distanceKm(hq.lat, hq.lng, p.lat, p.lng));
+    const stopToHq = points.map((p) => distanceKm(p.lat, p.lng, hq.lat, hq.lng));
 
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue;
-      between[i][j] = distanceKm(
-        points[i].lat,
-        points[i].lng,
-        points[j].lat,
-        points[j].lng
-      );
-    }
-  }
+    const between: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
 
-  return { hqToStop, stopToHq, between };
-}
-
-function routeCostFromHQ(route: RouteStop[], hq: { lat: number; lng: number }) {
-  if (route.length === 0) return 0;
-
-  let total = 0;
-
-  total += distanceKm(hq.lat, hq.lng, route[0].customer!.lat!, route[0].customer!.lng!);
-
-  for (let i = 0; i < route.length - 1; i++) {
-    total += distanceKm(
-      route[i].customer!.lat!,
-      route[i].customer!.lng!,
-      route[i + 1].customer!.lat!,
-      route[i + 1].customer!.lng!
-    );
-  }
-
-  total += distanceKm(
-    route[route.length - 1].customer!.lat!,
-    route[route.length - 1].customer!.lng!,
-    hq.lat,
-    hq.lng
-  );
-
-  return total;
-}
-
-function pickBestDirection(route: RouteStop[], hq: { lat: number; lng: number }) {
-  if (route.length <= 1) return route;
-
-  const forward = [...route];
-  const reversed = [...route].reverse();
-
-  const forwardFirstDist = distanceKm(
-    hq.lat,
-    hq.lng,
-    forward[0].customer!.lat!,
-    forward[0].customer!.lng!
-  );
-
-  const reversedFirstDist = distanceKm(
-    hq.lat,
-    hq.lng,
-    reversed[0].customer!.lat!,
-    reversed[0].customer!.lng!
-  );
-
-  return forwardFirstDist <= reversedFirstDist ? forward : reversed;
-}
-function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
-  const n = route.length;
-  if (n <= 1) return [...route];
-
-  const points = route.map((s) => ({
-    lat: s.customer!.lat!,
-    lng: s.customer!.lng!,
-  }));
-
-  const hqToStop = points.map((p) => distanceKm(hq.lat, hq.lng, p.lat, p.lng));
-  const stopToHq = points.map((p) => distanceKm(p.lat, p.lng, hq.lat, hq.lng));
-
-  const between: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
-  const angleFromHq: number[] = points.map((p) =>
-    Math.atan2(p.lat - hq.lat, p.lng - hq.lng)
-  );
-
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      if (i === j) continue;
-      between[i][j] = distanceKm(points[i].lat, points[i].lng, points[j].lat, points[j].lng);
-    }
-  }
-
-  function angularPenalty(a: number, b: number) {
-    let diff = Math.abs(a - b);
-    if (diff > Math.PI) diff = 2 * Math.PI - diff;
-    return diff;
-  }
-
-  const size = 1 << n;
-  const dp: number[][] = Array.from({ length: size }, () => Array(n).fill(Infinity));
-  const parent: number[][] = Array.from({ length: size }, () => Array(n).fill(-1));
-
-  for (let i = 0; i < n; i++) {
-    dp[1 << i][i] = hqToStop[i];
-  }
-
-  for (let mask = 0; mask < size; mask++) {
-    for (let last = 0; last < n; last++) {
-      const currentCost = dp[mask][last];
-      if (!Number.isFinite(currentCost)) continue;
-      if ((mask & (1 << last)) === 0) continue;
-
-      for (let next = 0; next < n; next++) {
-        if (mask & (1 << next)) continue;
-
-        const nextMask = mask | (1 << next);
-
-        const distCost = between[last][next];
-
-        const turnPenalty =
-          angularPenalty(angleFromHq[last], angleFromHq[next]) * 8;
-
-        const nextCost = currentCost + distCost + turnPenalty;
-
-        if (nextCost < dp[nextMask][next]) {
-          dp[nextMask][next] = nextCost;
-          parent[nextMask][next] = last;
-        }
-      }
-    }
-  }
-
-  const fullMask = size - 1;
-  let bestLast = 0;
-  let bestTotal = Infinity;
-
-  for (let last = 0; last < n; last++) {
-    const total = dp[fullMask][last] + stopToHq[last];
-    if (total < bestTotal) {
-      bestTotal = total;
-      bestLast = last;
-    }
-  }
-
-  const order: number[] = [];
-  let mask = fullMask;
-  let current = bestLast;
-
-  while (current !== -1) {
-    order.push(current);
-    const prev = parent[mask][current];
-    mask = mask ^ (1 << current);
-    current = prev;
-  }
-
-  order.reverse();
-
-  const bestRoute = order.map((idx) => route[idx]);
-return pickBestDirection(bestRoute, hq);
-}
-function buildNearestNeighbourRoute(
-  candidates: RouteStop[],
-  startLat: number,
-  startLng: number
-) {
-  const remaining = [...candidates];
-  const route: RouteStop[] = [];
-
-  let currentLat = startLat;
-  let currentLng = startLng;
-
-  while (remaining.length > 0) {
-    let bestIndex = 0;
-    let bestDistance = Infinity;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const stop = remaining[i];
-      const lat = stop.customer!.lat!;
-      const lng = stop.customer!.lng!;
-      const dist = distanceKm(currentLat, currentLng, lat, lng);
-
-      if (dist < bestDistance) {
-        bestDistance = dist;
-        bestIndex = i;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        between[i][j] = distanceKm(
+          points[i].lat,
+          points[i].lng,
+          points[j].lat,
+          points[j].lng
+        );
       }
     }
 
-    const nextStop = remaining.splice(bestIndex, 1)[0];
-    route.push(nextStop);
-    currentLat = nextStop.customer!.lat!;
-    currentLng = nextStop.customer!.lng!;
+    return { hqToStop, stopToHq, between };
   }
 
-  return route;
-}
+  function routeCostFromHQ(route: RouteStop[], hq: { lat: number; lng: number }) {
+    if (route.length === 0) return 0;
 
-function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
-  if (route.length <= 1) return [...route];
-
-  function angleFromHQ(stop: RouteStop) {
-    return Math.atan2(stop.customer!.lat! - hq.lat, stop.customer!.lng! - hq.lng);
-  }
-
-  function normalizeAngleDiff(a: number, b: number) {
-    let diff = Math.abs(a - b);
-    if (diff > Math.PI) diff = 2 * Math.PI - diff;
-    return diff;
-  }
-
-  function routeCostWithPenalty(stops: RouteStop[]) {
     let total = 0;
 
-    total += distanceKm(hq.lat, hq.lng, stops[0].customer!.lat!, stops[0].customer!.lng!);
+    total += distanceKm(hq.lat, hq.lng, route[0].customer!.lat!, route[0].customer!.lng!);
 
-    for (let i = 0; i < stops.length - 1; i++) {
-      const a = stops[i];
-      const b = stops[i + 1];
-
+    for (let i = 0; i < route.length - 1; i++) {
       total += distanceKm(
-        a.customer!.lat!,
-        a.customer!.lng!,
-        b.customer!.lat!,
-        b.customer!.lng!
+        route[i].customer!.lat!,
+        route[i].customer!.lng!,
+        route[i + 1].customer!.lat!,
+        route[i + 1].customer!.lng!
       );
-
-      const anglePenalty = normalizeAngleDiff(angleFromHQ(a), angleFromHQ(b)) * 8;
-      total += anglePenalty;
     }
 
     total += distanceKm(
-      stops[stops.length - 1].customer!.lat!,
-      stops[stops.length - 1].customer!.lng!,
+      route[route.length - 1].customer!.lat!,
+      route[route.length - 1].customer!.lng!,
       hq.lat,
       hq.lng
     );
@@ -1327,145 +1244,337 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
     return total;
   }
 
-  const byAngle = [...route].sort((a, b) => angleFromHQ(a) - angleFromHQ(b));
-  const byAngleReverse = [...byAngle].reverse();
-  const byDistance = [...route].sort((a, b) => {
-    const da = distanceKm(hq.lat, hq.lng, a.customer!.lat!, a.customer!.lng!);
-    const db = distanceKm(hq.lat, hq.lng, b.customer!.lat!, b.customer!.lng!);
-    return da - db;
-  });
+  function pickBestDirection(route: RouteStop[], hq: { lat: number; lng: number }) {
+    if (route.length <= 1) return route;
 
-  const candidates: RouteStop[][] = [
-    byAngle,
-    byAngleReverse,
-    byDistance,
-    buildNearestNeighbourRoute(route, hq.lat, hq.lng),
-  ];
+    const forward = [...route];
+    const reversed = [...route].reverse();
 
-  for (const seed of route) {
-    const seeded = [seed, ...route.filter((s) => s.id !== seed.id)];
-    const built: RouteStop[] = [seed];
-    const remaining = seeded.slice(1);
+    const forwardFirstDist = distanceKm(
+      hq.lat,
+      hq.lng,
+      forward[0].customer!.lat!,
+      forward[0].customer!.lng!
+    );
 
-    let currentLat = seed.customer!.lat!;
-    let currentLng = seed.customer!.lng!;
+    const reversedFirstDist = distanceKm(
+      hq.lat,
+      hq.lng,
+      reversed[0].customer!.lat!,
+      reversed[0].customer!.lng!
+    );
+
+    return forwardFirstDist <= reversedFirstDist ? forward : reversed;
+  }
+
+  function solveExactRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
+    const n = route.length;
+    if (n <= 1) return [...route];
+
+    const points = route.map((s) => ({
+      lat: s.customer!.lat!,
+      lng: s.customer!.lng!,
+    }));
+
+    const hqToStop = points.map((p) => distanceKm(hq.lat, hq.lng, p.lat, p.lng));
+    const stopToHq = points.map((p) => distanceKm(p.lat, p.lng, hq.lat, hq.lng));
+
+    const between: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
+    const angleFromHq: number[] = points.map((p) =>
+      Math.atan2(p.lat - hq.lat, p.lng - hq.lng)
+    );
+
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        between[i][j] = distanceKm(points[i].lat, points[i].lng, points[j].lat, points[j].lng);
+      }
+    }
+
+    function angularPenalty(a: number, b: number) {
+      let diff = Math.abs(a - b);
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+      return diff;
+    }
+
+    const size = 1 << n;
+    const dp: number[][] = Array.from({ length: size }, () => Array(n).fill(Infinity));
+    const parent: number[][] = Array.from({ length: size }, () => Array(n).fill(-1));
+
+    for (let i = 0; i < n; i++) {
+      dp[1 << i][i] = hqToStop[i];
+    }
+
+    for (let mask = 0; mask < size; mask++) {
+      for (let last = 0; last < n; last++) {
+        const currentCost = dp[mask][last];
+        if (!Number.isFinite(currentCost)) continue;
+        if ((mask & (1 << last)) === 0) continue;
+
+        for (let next = 0; next < n; next++) {
+          if (mask & (1 << next)) continue;
+
+          const nextMask = mask | (1 << next);
+          const distCost = between[last][next];
+          const turnPenalty = angularPenalty(angleFromHq[last], angleFromHq[next]) * 8;
+          const nextCost = currentCost + distCost + turnPenalty;
+
+          if (nextCost < dp[nextMask][next]) {
+            dp[nextMask][next] = nextCost;
+            parent[nextMask][next] = last;
+          }
+        }
+      }
+    }
+
+    const fullMask = size - 1;
+    let bestLast = 0;
+    let bestTotal = Infinity;
+
+    for (let last = 0; last < n; last++) {
+      const total = dp[fullMask][last] + stopToHq[last];
+      if (total < bestTotal) {
+        bestTotal = total;
+        bestLast = last;
+      }
+    }
+
+    const order: number[] = [];
+    let mask = fullMask;
+    let current = bestLast;
+
+    while (current !== -1) {
+      order.push(current);
+      const prev = parent[mask][current];
+      mask = mask ^ (1 << current);
+      current = prev;
+    }
+
+    order.reverse();
+
+    const bestRoute = order.map((idx) => route[idx]);
+    return pickBestDirection(bestRoute, hq);
+  }
+
+  function buildNearestNeighbourRoute(
+    candidates: RouteStop[],
+    startLat: number,
+    startLng: number
+  ) {
+    const remaining = [...candidates];
+    const route: RouteStop[] = [];
+
+    let currentLat = startLat;
+    let currentLng = startLng;
 
     while (remaining.length > 0) {
       let bestIndex = 0;
-      let bestScore = Infinity;
+      let bestDistance = Infinity;
 
       for (let i = 0; i < remaining.length; i++) {
         const stop = remaining[i];
-        const dist = distanceKm(currentLat, currentLng, stop.customer!.lat!, stop.customer!.lng!);
+        const lat = stop.customer!.lat!;
+        const lng = stop.customer!.lng!;
+        const dist = distanceKm(currentLat, currentLng, lat, lng);
 
-        const prevAngle = Math.atan2(currentLat - hq.lat, currentLng - hq.lng);
-        const nextAngle = angleFromHQ(stop);
-        const anglePenalty = normalizeAngleDiff(prevAngle, nextAngle) * 8;
-
-        const score = dist + anglePenalty;
-
-        if (score < bestScore) {
-          bestScore = score;
+        if (dist < bestDistance) {
+          bestDistance = dist;
           bestIndex = i;
         }
       }
 
       const nextStop = remaining.splice(bestIndex, 1)[0];
-      built.push(nextStop);
+      route.push(nextStop);
       currentLat = nextStop.customer!.lat!;
       currentLng = nextStop.customer!.lng!;
     }
 
-    candidates.push(built);
+    return route;
   }
 
-  let bestRoute = candidates[0];
-  let bestCost = routeCostWithPenalty(bestRoute);
+  function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number }) {
+    if (route.length <= 1) return [...route];
 
-  for (let i = 1; i < candidates.length; i++) {
-    const candidate = candidates[i];
-    const cost = routeCostWithPenalty(candidate);
-
-    if (cost < bestCost) {
-      bestCost = cost;
-      bestRoute = candidate;
+    function angleFromHQ(stop: RouteStop) {
+      return Math.atan2(stop.customer!.lat! - hq.lat, stop.customer!.lng! - hq.lng);
     }
-  }
 
-  return pickBestDirection(bestRoute, hq);
-}
+    function normalizeAngleDiff(a: number, b: number) {
+      let diff = Math.abs(a - b);
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+      return diff;
+    }
+
+    function routeCostWithPenalty(stops: RouteStop[]) {
+      let total = 0;
+
+      total += distanceKm(hq.lat, hq.lng, stops[0].customer!.lat!, stops[0].customer!.lng!);
+
+      for (let i = 0; i < stops.length - 1; i++) {
+        const a = stops[i];
+        const b = stops[i + 1];
+
+        total += distanceKm(
+          a.customer!.lat!,
+          a.customer!.lng!,
+          b.customer!.lat!,
+          b.customer!.lng!
+        );
+
+        const anglePenalty = normalizeAngleDiff(angleFromHQ(a), angleFromHQ(b)) * 8;
+        total += anglePenalty;
+      }
+
+      total += distanceKm(
+        stops[stops.length - 1].customer!.lat!,
+        stops[stops.length - 1].customer!.lng!,
+        hq.lat,
+        hq.lng
+      );
+
+      return total;
+    }
+
+    const byAngle = [...route].sort((a, b) => angleFromHQ(a) - angleFromHQ(b));
+    const byAngleReverse = [...byAngle].reverse();
+    const byDistance = [...route].sort((a, b) => {
+      const da = distanceKm(hq.lat, hq.lng, a.customer!.lat!, a.customer!.lng!);
+      const db = distanceKm(hq.lat, hq.lng, b.customer!.lat!, b.customer!.lng!);
+      return da - db;
+    });
+
+    const candidates: RouteStop[][] = [
+      byAngle,
+      byAngleReverse,
+      byDistance,
+      buildNearestNeighbourRoute(route, hq.lat, hq.lng),
+    ];
+
+    for (const seed of route) {
+      const seeded = [seed, ...route.filter((s) => s.id !== seed.id)];
+      const built: RouteStop[] = [seed];
+      const remaining = seeded.slice(1);
+
+      let currentLat = seed.customer!.lat!;
+      let currentLng = seed.customer!.lng!;
+
+      while (remaining.length > 0) {
+        let bestIndex = 0;
+        let bestScore = Infinity;
+
+        for (let i = 0; i < remaining.length; i++) {
+          const stop = remaining[i];
+          const dist = distanceKm(currentLat, currentLng, stop.customer!.lat!, stop.customer!.lng!);
+
+          const prevAngle = Math.atan2(currentLat - hq.lat, currentLng - hq.lng);
+          const nextAngle = angleFromHQ(stop);
+          const anglePenalty = normalizeAngleDiff(prevAngle, nextAngle) * 8;
+
+          const score = dist + anglePenalty;
+
+          if (score < bestScore) {
+            bestScore = score;
+            bestIndex = i;
+          }
+        }
+
+        const nextStop = remaining.splice(bestIndex, 1)[0];
+        built.push(nextStop);
+        currentLat = nextStop.customer!.lat!;
+        currentLng = nextStop.customer!.lng!;
+      }
+
+      candidates.push(built);
+    }
+
+    let bestRoute = candidates[0];
+    let bestCost = routeCostWithPenalty(bestRoute);
+
+    for (let i = 1; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      const cost = routeCostWithPenalty(candidate);
+
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestRoute = candidate;
+      }
+    }
+
+    return pickBestDirection(bestRoute, hq);
+  }
 
   async function optimizeRoute() {
-  try {
-    setError(null);
-    setOptimizing(true);
+    try {
+      setError(null);
+      setOptimizing(true);
 
-    if (stops.length < 2) return;
+      if (stops.length < 2) return;
 
-    const HQ = {
-      lat: 55.10692093390334,
-      lng: 14.822756898314669,
-    };
+      const HQ = {
+        lat: 55.10692093390334,
+        lng: 14.822756898314669,
+      };
 
-    const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
+      const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
 
-    const lockedStops = sortedStops.filter((s) => s.status !== "planned");
-    const plannedStops = sortedStops.filter((s) => s.status === "planned");
+      const lockedStops = sortedStops.filter((s) => s.status !== "planned");
+      const plannedStops = sortedStops.filter((s) => s.status === "planned");
 
-    if (plannedStops.length < 2) return;
+      if (plannedStops.length < 2) return;
 
-    const plannedWithCoords = plannedStops.filter(
-      (s) =>
-        s.customer?.lat != null &&
-        s.customer?.lng != null &&
-        Number.isFinite(s.customer.lat) &&
-        Number.isFinite(s.customer.lng)
-    );
+      const plannedWithCoords = plannedStops.filter(
+        (s) =>
+          s.customer?.lat != null &&
+          s.customer?.lng != null &&
+          Number.isFinite(s.customer.lat) &&
+          Number.isFinite(s.customer.lng)
+      );
 
-    const plannedWithoutCoords = plannedStops.filter(
-      (s) =>
-        s.customer?.lat == null ||
-        s.customer?.lng == null ||
-        !Number.isFinite(s.customer.lat) ||
-        !Number.isFinite(s.customer.lng)
-    );
+      const plannedWithoutCoords = plannedStops.filter(
+        (s) =>
+          s.customer?.lat == null ||
+          s.customer?.lng == null ||
+          !Number.isFinite(s.customer.lat) ||
+          !Number.isFinite(s.customer.lng)
+      );
 
-    if (plannedWithCoords.length < 2) return;
+      if (plannedWithCoords.length < 2) return;
 
-    const EXACT_LIMIT = 11;
+      const EXACT_LIMIT = 11;
 
-    let bestPlannedRoute: RouteStop[];
+      let bestPlannedRoute: RouteStop[];
 
-    if (plannedWithCoords.length <= EXACT_LIMIT) {
-      bestPlannedRoute = solveExactRoute(plannedWithCoords, HQ);
-    } else {
-      bestPlannedRoute = solveHeuristicRoute(plannedWithCoords, HQ);
+      if (plannedWithCoords.length <= EXACT_LIMIT) {
+        bestPlannedRoute = solveExactRoute(plannedWithCoords, HQ);
+      } else {
+        bestPlannedRoute = solveHeuristicRoute(plannedWithCoords, HQ);
+      }
+
+      const reorderedPlanned = [...bestPlannedRoute, ...plannedWithoutCoords];
+
+      const finalStops = [...lockedStops, ...reorderedPlanned].map((stop, index) => ({
+        ...stop,
+        order_index: index,
+      }));
+
+      for (const stop of finalStops) {
+        const { error } = await supabase
+          .from("route_stops")
+          .update({ order_index: stop.order_index })
+          .eq("id", stop.id);
+
+        if (error) throw error;
+      }
+
+      setStops(finalStops);
+      await loadUpcomingRoutes(upcomingBaseDate);
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setOptimizing(false);
     }
-
-    const reorderedPlanned = [...bestPlannedRoute, ...plannedWithoutCoords];
-
-    const finalStops = [...lockedStops, ...reorderedPlanned].map((stop, index) => ({
-      ...stop,
-      order_index: index,
-    }));
-
-    for (const stop of finalStops) {
-      const { error } = await supabase
-        .from("route_stops")
-        .update({ order_index: stop.order_index })
-        .eq("id", stop.id);
-
-      if (error) throw error;
-    }
-
-    setStops(finalStops);
-    await loadUpcomingRoutes(upcomingBaseDate);
-  } catch (e: any) {
-    setError(String(e?.message ?? e));
-  } finally {
-    setOptimizing(false);
   }
-}
+
   async function suggestCustomersForDate() {
     try {
       setError(null);
@@ -1498,27 +1607,62 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
       }
 
       const candidateCustomerIds = Array.from(new Set(rows.map((r) => r.customer_id)));
+      const candidateBinTypes = Array.from(new Set(rows.map((r) => r.bin_type)));
 
       const { data: activeBinsRows, error: activeBinsErr } = await supabase
         .from("customer_bins")
-        .select("customer_id,bin_type,is_active")
+        .select("customer_id,bin_type,is_active,frequency_months")
         .in("customer_id", candidateCustomerIds)
         .eq("is_active", true);
 
       if (activeBinsErr) throw activeBinsErr;
 
-      const activeBinMap: Record<string, string[]> = {};
-      for (const row of (activeBinsRows ?? []) as Array<{ customer_id: string; bin_type: string; is_active: boolean }>) {
-        (activeBinMap[row.customer_id] ||= []);
-        if (!activeBinMap[row.customer_id].includes(row.bin_type)) {
-          activeBinMap[row.customer_id].push(row.bin_type);
+      const activeBinConfigMap: Record<string, { frequency_months: number | null }> = {};
+
+      for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
+        const key = `${row.customer_id}__${row.bin_type}`;
+        activeBinConfigMap[key] = {
+          frequency_months: row.frequency_months,
+        };
+      }
+
+      const latestDoneByCustomerBin: Record<string, string | null> = {};
+
+      if (candidateCustomerIds.length > 0 && candidateBinTypes.length > 0) {
+        const { data: historyRows, error: historyErr } = await supabase
+          .from("service_history")
+          .select("customer_id,bin_type,serviced_at")
+          .in("customer_id", candidateCustomerIds)
+          .in("bin_type", candidateBinTypes)
+          .eq("status", "done")
+          .order("serviced_at", { ascending: false });
+
+        if (historyErr) throw historyErr;
+
+        for (const row of (historyRows ?? []) as ServiceHistoryMiniRow[]) {
+          const key = `${row.customer_id}__${row.bin_type}`;
+          if (latestDoneByCustomerBin[key] === undefined) {
+            latestDoneByCustomerBin[key] = row.serviced_at.slice(0, 10);
+          }
         }
       }
 
       const binsMap: Record<string, string[]> = {};
+
       for (const r of rows) {
-        const activeTypesForCustomer = activeBinMap[r.customer_id] ?? [];
-        if (!activeTypesForCustomer.includes(r.bin_type)) continue;
+        const key = `${r.customer_id}__${r.bin_type}`;
+        const activeConfig = activeBinConfigMap[key];
+
+        if (!activeConfig) continue;
+
+        const lastDoneYMD = latestDoneByCustomerBin[key] ?? null;
+        const isDueNow = isBinDueByFrequency(
+          lastDoneYMD,
+          activeConfig.frequency_months,
+          selectedDateYMD
+        );
+
+        if (!isDueNow) continue;
 
         (binsMap[r.customer_id] ||= []);
         if (!binsMap[r.customer_id].includes(r.bin_type)) {
@@ -1530,7 +1674,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
 
       if (eligibleIds.length === 0) {
         setTodayBinsByCustomer({});
-        setError("Ingen aktive spande klar til rengøring på den valgte dag.");
+        setError("Ingen aktive abonnementer/spande er forfaldne til rengøring på den valgte dag.");
         return;
       }
 
@@ -1705,7 +1849,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
         </div>
       )}
 
-            <div
+      <div
         style={{
           marginTop: 14,
           display: "grid",
@@ -1893,7 +2037,8 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
           </div>
         ) : null}
       </div>
-            <div
+
+      <div
         style={{
           marginTop: 18,
           display: "grid",
@@ -2125,7 +2270,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
                                       ...nextDateBadgeStyle,
                                     }}
                                   >
-                                    {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
+                                    {info?.nextDate ? `Næste: ${info.nextDate}` : "Ingen ny dato endnu"}
                                   </span>
                                 ) : info?.remainingCount ? (
                                   <span
@@ -2178,6 +2323,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
                               await updateStop(s.id, { status: "done", done_at: doneAt });
                               await deactivateSingleCustomerPlannedBins(updatedStop);
                               await writeServiceHistory(updatedStop, "done");
+                              await refreshBinOpportunityForCurrentStops();
                             } catch (e: any) {
                               setError(String(e?.message ?? e));
                             }
@@ -2200,6 +2346,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
                             try {
                               await updateStop(s.id, { status: "skipped", done_at: null });
                               await writeServiceHistory({ ...s, status: "skipped", done_at: null }, "skipped");
+                              await refreshBinOpportunityForCurrentStops();
                             } catch (e: any) {
                               setError(String(e?.message ?? e));
                             }
@@ -2400,7 +2547,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
                                     ...nextDateBadgeStyle,
                                   }}
                                 >
-                                  {info?.nextDate ? `Næste: ${info.nextDate}` : "Færdig for måneden"}
+                                  {info?.nextDate ? `Næste: ${info.nextDate}` : "Ingen ny dato endnu"}
                                 </span>
                               ) : info?.remainingCount ? (
                                 <span
@@ -2453,6 +2600,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
                             await updateStop(s.id, { status: "done", done_at: doneAt });
                             await deactivateSingleCustomerPlannedBins(updatedStop);
                             await writeServiceHistory(updatedStop, "done");
+                            await refreshBinOpportunityForCurrentStops();
                           } catch (e: any) {
                             setError(String(e?.message ?? e));
                           }
@@ -2475,6 +2623,7 @@ function solveHeuristicRoute(route: RouteStop[], hq: { lat: number; lng: number 
                           try {
                             await updateStop(s.id, { status: "skipped", done_at: null });
                             await writeServiceHistory({ ...s, status: "skipped", done_at: null }, "skipped");
+                            await refreshBinOpportunityForCurrentStops();
                           } catch (e: any) {
                             setError(String(e?.message ?? e));
                           }
