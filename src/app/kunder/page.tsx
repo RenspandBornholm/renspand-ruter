@@ -1404,8 +1404,7 @@ export default function KunderPage() {
 <div
   style={{
 
-          <div
-            style={{
+          
               ...styles.cardActionArea,
               width: isMobile ? "100%" : undefined,
               justifyContent: isMobile ? "flex-start" : "flex-end",
