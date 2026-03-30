@@ -18,6 +18,7 @@ type CustomerRow = {
   city: string;
   phone?: string | null;
   email?: string | null;
+  note?: string | null;
   lat: number | null;
   lng: number | null;
   service_type: ServiceType | null;
@@ -298,6 +299,7 @@ export default function KunderPage() {
   const [editCity, setEditCity] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editNote, setEditNote] = useState("");
   const [editServiceType, setEditServiceType] = useState<ServiceType>("single");
   const [editCustomerType, setEditCustomerType] = useState<CustomerType>("private");
 
@@ -355,6 +357,7 @@ export default function KunderPage() {
     setEditCity(c.city ?? "");
     setEditPhone(c.phone ?? "");
     setEditEmail(c.email ?? "");
+    setEditNote(c.note ?? "");
     setEditServiceType((c.service_type ?? "single") as ServiceType);
     setEditCustomerType((c.customer_type ?? "private") as CustomerType);
 
@@ -371,6 +374,7 @@ export default function KunderPage() {
     setEditCity("");
     setEditPhone("");
     setEditEmail("");
+    setEditNote("");
     setEditServiceType("single");
     setEditCustomerType("private");
   }
@@ -394,6 +398,7 @@ export default function KunderPage() {
           city: editCity.trim(),
           phone: editPhone.trim() || null,
           email: editEmail.trim() || null,
+          note: editNote.trim() || null,
           service_type: editServiceType,
           customer_type: editCustomerType,
         })
@@ -424,7 +429,7 @@ export default function KunderPage() {
 
     const { data: cData, error: cErr } = await supabase
       .from("customers")
-      .select("id,name,address,city,phone,email,lat,lng,service_type,customer_type,created_at")
+      .select("id,name,address,city,phone,email,note,lat,lng,service_type,customer_type,created_at")
       .order("created_at", { ascending: false });
 
     if (cErr) {
@@ -1045,6 +1050,16 @@ export default function KunderPage() {
               style={styles.input}
             />
           </div>
+         <div style={{ gridColumn: "1 / -1" }}>
+  <label style={styles.label}>Note</label>
+  <textarea
+    value={editNote}
+    onChange={(e) => setEditNote(e.target.value)}
+    placeholder="Fx kommentar fra bestilling, adgangsforhold eller særlige ønsker"
+    style={styles.textarea}
+    rows={4}
+  />
+</div>
         </div>
 
         <div style={{ marginTop: 14 }}>
@@ -1186,6 +1201,21 @@ export default function KunderPage() {
         {editingCustomerId === c.id ? renderEditForm(c.id) : null}
 
         {renderLatestDocumentation(c.id)}
+{c.note ? (
+  <div
+    style={{
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 14,
+      border: "1px solid rgba(78,161,255,0.22)",
+      background: "rgba(78,161,255,0.07)",
+      maxWidth: 520,
+    }}
+  >
+    <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.8, marginBottom: 6 }}>Kunde-note</div>
+    <div style={{ fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{c.note}</div>
+  </div>
+) : null}
 
         <div style={{ marginTop: 14 }}>
           <div style={{ fontWeight: 800, marginBottom: 10, opacity: 0.95 }}>Spande</div>
@@ -1362,6 +1392,18 @@ export default function KunderPage() {
             </div>
           </div>
 
+{c.note ? (
+  <div style={styles.customerNotePreview}>
+    <span style={styles.customerNoteLabel}>📌 Note</span>
+    <div style={styles.customerNoteText}>
+      {c.note.length > 140 ? `${c.note.slice(0, 140)}...` : c.note}
+    </div>
+  </div>
+) : null}
+
+<div
+  style={{
+
           <div
             style={{
               ...styles.cardActionArea,
@@ -1388,6 +1430,17 @@ export default function KunderPage() {
             >
               📝 Rediger
             </button>
+<button
+  onClick={() => startEditCustomer(c)}
+  style={{
+    ...styles.cardActionBtn,
+    border: "1px solid rgba(168,139,250,0.4)",
+    background: "rgba(168,139,250,0.08)",
+    color: "#efe3ff",
+  }}
+>
+  📌 Note
+</button>
 
             <button
               onClick={() => geocodeCustomer(c)}
@@ -1800,7 +1853,30 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffb4b4",
     whiteSpace: "pre-wrap",
   },
+customerNotePreview: {
+  marginTop: 10,
+  padding: "10px 12px",
+  borderRadius: 14,
+  border: "1px solid rgba(168,139,250,0.28)",
+  background: "rgba(168,139,250,0.07)",
+  maxWidth: 640,
+},
 
+customerNoteLabel: {
+  display: "inline-block",
+  marginBottom: 6,
+  fontSize: 12,
+  fontWeight: 900,
+  color: "#efe3ff",
+},
+
+customerNoteText: {
+  fontSize: 13,
+  lineHeight: 1.45,
+  color: "rgba(255,255,255,0.92)",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+},
   card: {
     marginTop: 18,
     border: "1px solid rgba(255,255,255,0.08)",
@@ -1859,6 +1935,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#fff",
     outline: "none",
   },
+  textarea: {
+    width: "100%",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid #2e2e2e",
+    background: "#171717",
+    color: "#fff",
+    outline: "none",
+    resize: "vertical",
+    minHeight: 96,
+    fontFamily: "inherit",
+},
   searchInputWrap: {
     display: "flex",
     alignItems: "center",
