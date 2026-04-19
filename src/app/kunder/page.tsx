@@ -259,6 +259,12 @@ export default function KunderPage() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [expandedCustomers, setExpandedCustomers] = useState<Record<string, boolean>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({
+    private_single: false,
+    private_sub: false,
+    business_single: false,
+    business_sub: false,
+  });
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900);
@@ -299,9 +305,12 @@ export default function KunderPage() {
   const [editCity, setEditCity] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editEmail, setEditEmail] = useState("");
-  const [editNote, setEditNote] = useState("");
   const [editServiceType, setEditServiceType] = useState<ServiceType>("single");
   const [editCustomerType, setEditCustomerType] = useState<CustomerType>("private");
+
+  const [noteModalCustomer, setNoteModalCustomer] = useState<CustomerRow | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCustomerType, setFilterCustomerType] = useState<"all" | CustomerType>("all");
@@ -318,6 +327,23 @@ export default function KunderPage() {
       ...prev,
       [customerId]: !prev[customerId],
     }));
+  }
+
+  function toggleGroup(groupKey: string) {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }));
+  }
+
+  function openNoteModal(customer: CustomerRow) {
+    setNoteModalCustomer(customer);
+    setNoteDraft(customer.note ?? "");
+  }
+
+  function closeNoteModal() {
+    setNoteModalCustomer(null);
+    setNoteDraft("");
   }
 
   function toggleBin(bin: BinType) {
@@ -357,7 +383,6 @@ export default function KunderPage() {
     setEditCity(c.city ?? "");
     setEditPhone(c.phone ?? "");
     setEditEmail(c.email ?? "");
-    setEditNote(c.note ?? "");
     setEditServiceType((c.service_type ?? "single") as ServiceType);
     setEditCustomerType((c.customer_type ?? "private") as CustomerType);
 
@@ -374,7 +399,6 @@ export default function KunderPage() {
     setEditCity("");
     setEditPhone("");
     setEditEmail("");
-    setEditNote("");
     setEditServiceType("single");
     setEditCustomerType("private");
   }
@@ -398,7 +422,6 @@ export default function KunderPage() {
           city: editCity.trim(),
           phone: editPhone.trim() || null,
           email: editEmail.trim() || null,
-          note: editNote.trim() || null,
           service_type: editServiceType,
           customer_type: editCustomerType,
         })
@@ -415,6 +438,34 @@ export default function KunderPage() {
       setError(String(e?.message ?? e));
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  async function saveCustomerNote() {
+    if (!noteModalCustomer) return;
+
+    setError(null);
+    setNoteSaving(true);
+
+    try {
+      const { error } = await supabase
+        .from("customers")
+        .update({
+          note: noteDraft.trim() || null,
+        })
+        .eq("id", noteModalCustomer.id);
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      await loadCustomers();
+      closeNoteModal();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setNoteSaving(false);
     }
   }
 
@@ -531,7 +582,6 @@ export default function KunderPage() {
       const cleaningDate = addDaysYMD(row.pickup_date, 1);
 
       if (!cleaningDate.startsWith(todayYMD.slice(0, 7))) continue;
-
       (groupedPickups[key] ||= []).push(cleaningDate);
     }
 
@@ -649,10 +699,7 @@ export default function KunderPage() {
     try {
       setError(null);
 
-      const { error } = await supabase
-        .from("customer_bins")
-        .update({ is_active: true })
-        .eq("id", binId);
+      const { error } = await supabase.from("customer_bins").update({ is_active: true }).eq("id", binId);
 
       if (error) {
         setError(error.message);
@@ -669,10 +716,7 @@ export default function KunderPage() {
     try {
       setError(null);
 
-      const { error } = await supabase
-        .from("customer_bins")
-        .update({ is_active: false })
-        .eq("id", binId);
+      const { error } = await supabase.from("customer_bins").update({ is_active: false }).eq("id", binId);
 
       if (error) {
         setError(error.message);
@@ -734,9 +778,7 @@ export default function KunderPage() {
       const { error: binsErr } = await supabase.from("customer_bins").insert(binRows);
 
       if (binsErr) {
-        setError(
-          `${binsErr.message}\n\nTip: Tilladte bin_type værdier skal nu være: madaffald, rest_plast, pap_metal.`
-        );
+        setError(`${binsErr.message}\n\nTip: Tilladte bin_type værdier skal nu være: madaffald, rest_plast, pap_metal.`);
         return;
       }
 
@@ -864,22 +906,17 @@ export default function KunderPage() {
 
       const matchesSearch =
         !q ||
-        [c.name ?? "", c.address ?? "", c.city ?? "", c.phone ?? "", c.email ?? ""]
+        [c.name ?? "", c.address ?? "", c.city ?? "", c.phone ?? "", c.email ?? "", c.note ?? ""]
           .join(" ")
           .toLowerCase()
           .includes(q);
 
-      const matchesCustomerType =
-        filterCustomerType === "all" || normType === filterCustomerType;
-
-      const matchesServiceType =
-        filterServiceType === "all" || normService === filterServiceType;
-
+      const matchesCustomerType = filterCustomerType === "all" || normType === filterCustomerType;
+      const matchesServiceType = filterServiceType === "all" || normService === filterServiceType;
       const matchesActiveStatus =
-        filterActiveStatus === "all" ||
-        (filterActiveStatus === "active" && hasActiveBins) ||
-        (filterActiveStatus === "inactive" && !hasActiveBins && hasInactiveBins) ||
-        (filterActiveStatus === "inactive" && bins.length > 0 && bins.every((b) => b.is_active === false));
+      filterActiveStatus === "all" ||
+     (filterActiveStatus === "active" && hasActiveBins) ||
+     (filterActiveStatus === "inactive" && bins.length > 0 && bins.every((b) => b.is_active === false));
 
       return matchesSearch && matchesCustomerType && matchesServiceType && matchesActiveStatus;
     });
@@ -1050,16 +1087,6 @@ export default function KunderPage() {
               style={styles.input}
             />
           </div>
-         <div style={{ gridColumn: "1 / -1" }}>
-  <label style={styles.label}>Note</label>
-  <textarea
-    value={editNote}
-    onChange={(e) => setEditNote(e.target.value)}
-    placeholder="Fx kommentar fra bestilling, adgangsforhold eller særlige ønsker"
-    style={styles.textarea}
-    rows={4}
-  />
-</div>
         </div>
 
         <div style={{ marginTop: 14 }}>
@@ -1201,21 +1228,6 @@ export default function KunderPage() {
         {editingCustomerId === c.id ? renderEditForm(c.id) : null}
 
         {renderLatestDocumentation(c.id)}
-{c.note ? (
-  <div
-    style={{
-      marginTop: 12,
-      padding: 12,
-      borderRadius: 14,
-      border: "1px solid rgba(78,161,255,0.22)",
-      background: "rgba(78,161,255,0.07)",
-      maxWidth: 520,
-    }}
-  >
-    <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.8, marginBottom: 6 }}>Kunde-note</div>
-    <div style={{ fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{c.note}</div>
-  </div>
-) : null}
 
         <div style={{ marginTop: 14 }}>
           <div style={{ fontWeight: 800, marginBottom: 10, opacity: 0.95 }}>Spande</div>
@@ -1325,6 +1337,7 @@ export default function KunderPage() {
     const inactiveBins = bins.filter((b) => b.is_active === false);
     const theme = getCustomerTypeTheme(service);
     const hasHistory = !!latestDocByCustomer[c.id];
+    const hasNote = !!(c.note && c.note.trim());
 
     return (
       <div style={styles.customerShell} key={c.id}>
@@ -1354,6 +1367,8 @@ export default function KunderPage() {
                 ) : (
                   <span style={styles.cardBadgeMuted}>Ingen historik</span>
                 )}
+
+                {hasNote ? <span style={styles.cardBadgeNote}>📌 Note</span> : null}
               </div>
             </div>
 
@@ -1361,10 +1376,10 @@ export default function KunderPage() {
               {c.address}, {c.city}
             </div>
 
-            {(c.phone || c.email) && (
+            {(c.email || c.phone) && (
               <div style={styles.customerContactRow}>
-                {c.phone ? <span style={styles.contactText}>📞 {c.phone}</span> : null}
                 {c.email ? <span style={styles.contactText}>✉️ {c.email}</span> : null}
+                {c.phone ? <span style={styles.contactText}>📞 {c.phone}</span> : null}
               </div>
             )}
 
@@ -1392,19 +1407,8 @@ export default function KunderPage() {
             </div>
           </div>
 
-{c.note ? (
-  <div style={styles.customerNotePreview}>
-    <span style={styles.customerNoteLabel}>📌 Note</span>
-    <div style={styles.customerNoteText}>
-      {c.note.length > 140 ? `${c.note.slice(0, 140)}...` : c.note}
-    </div>
-  </div>
-) : null}
-
-<div
-  style={{
-
-          
+          <div
+            style={{
               ...styles.cardActionArea,
               width: isMobile ? "100%" : undefined,
               justifyContent: isMobile ? "flex-start" : "flex-end",
@@ -1429,17 +1433,18 @@ export default function KunderPage() {
             >
               📝 Rediger
             </button>
-<button
-  onClick={() => startEditCustomer(c)}
-  style={{
-    ...styles.cardActionBtn,
-    border: "1px solid rgba(168,139,250,0.4)",
-    background: "rgba(168,139,250,0.08)",
-    color: "#efe3ff",
-  }}
->
-  📌 Note
-</button>
+
+            <button
+              onClick={() => openNoteModal(c)}
+              style={{
+                ...styles.cardIconBtn,
+                ...(hasNote ? styles.cardIconBtnNoteActive : {}),
+              }}
+              title={hasNote ? "Vis/rediger note" : "Tilføj note"}
+              aria-label={hasNote ? "Vis eller rediger note" : "Tilføj note"}
+            >
+              📌
+            </button>
 
             <button
               onClick={() => geocodeCustomer(c)}
@@ -1486,11 +1491,15 @@ export default function KunderPage() {
   }
 
   function renderCustomerGroup(group: CustomerGroupMeta) {
+    const collapsed = !!collapsedGroups[group.key];
+
     return (
       <section key={group.key} style={styles.groupSection}>
-        <div
+        <button
+          type="button"
+          onClick={() => toggleGroup(group.key)}
           style={{
-            ...styles.groupHeader,
+            ...styles.groupHeaderBtn,
             border: `1px solid ${group.accent}33`,
             background: `linear-gradient(180deg, ${group.accentSoft} 0%, rgba(255,255,255,0.02) 100%)`,
           }}
@@ -1522,9 +1531,11 @@ export default function KunderPage() {
               <div style={styles.groupSubtitle}>{group.subtitle}</div>
             </div>
           </div>
-        </div>
 
-        <div style={{ marginTop: 14 }}>{renderCustomerList(group.customers)}</div>
+          <div style={styles.groupChevron}>{collapsed ? "▸" : "▾"}</div>
+        </button>
+
+        {!collapsed ? <div style={{ marginTop: 14 }}>{renderCustomerList(group.customers)}</div> : null}
       </section>
     );
   }
@@ -1813,6 +1824,44 @@ export default function KunderPage() {
         </div>
       </div>
 
+      {noteModalCustomer ? (
+        <div style={styles.modalOverlay} onClick={closeNoteModal}>
+          <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <div>
+                <div style={styles.modalTitle}>Kunde-note</div>
+                <div style={styles.modalSubtitle}>{noteModalCustomer.name}</div>
+              </div>
+
+              <button type="button" onClick={closeNoteModal} style={styles.modalCloseBtn}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label style={styles.label}>Note</label>
+              <textarea
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                placeholder="Fx kommentar fra bestilling, adgangsforhold eller særlige ønsker"
+                style={styles.textarea}
+                rows={6}
+              />
+            </div>
+
+            <div style={styles.modalActions}>
+              <button type="button" onClick={closeNoteModal} style={styles.modalBtnSecondary}>
+                Luk
+              </button>
+
+              <button type="button" onClick={saveCustomerNote} disabled={noteSaving} style={styles.modalBtnPrimary}>
+                {noteSaving ? "Gemmer..." : "Gem note"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <NavTabs />
     </div>
   );
@@ -1852,30 +1901,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffb4b4",
     whiteSpace: "pre-wrap",
   },
-customerNotePreview: {
-  marginTop: 10,
-  padding: "10px 12px",
-  borderRadius: 14,
-  border: "1px solid rgba(168,139,250,0.28)",
-  background: "rgba(168,139,250,0.07)",
-  maxWidth: 640,
-},
 
-customerNoteLabel: {
-  display: "inline-block",
-  marginBottom: 6,
-  fontSize: 12,
-  fontWeight: 900,
-  color: "#efe3ff",
-},
-
-customerNoteText: {
-  fontSize: 13,
-  lineHeight: 1.45,
-  color: "rgba(255,255,255,0.92)",
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-},
   card: {
     marginTop: 18,
     border: "1px solid rgba(255,255,255,0.08)",
@@ -1945,7 +1971,7 @@ customerNoteText: {
     resize: "vertical",
     minHeight: 96,
     fontFamily: "inherit",
-},
+  },
   searchInputWrap: {
     display: "flex",
     alignItems: "center",
@@ -2109,9 +2135,18 @@ customerNoteText: {
     background: "linear-gradient(180deg, rgba(14,14,14,0.96) 0%, rgba(10,10,10,0.92) 100%)",
     boxShadow: "0 14px 36px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.02)",
   },
-  groupHeader: {
+    groupHeaderBtn: {
+    width: "100%",
     borderRadius: 18,
     padding: "14px 16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    cursor: "pointer",
+    textAlign: "left",
+    color: "#fff",
+    background: "transparent",
   },
   groupHeaderLeft: {
     display: "flex",
@@ -2136,11 +2171,13 @@ customerNoteText: {
     fontSize: 24,
     fontWeight: 950,
     letterSpacing: -0.3,
+    color: "#fff",
   },
   groupSubtitle: {
     marginTop: 4,
     fontSize: 13,
     opacity: 0.78,
+    color: "#fff",
   },
   groupCountPill: {
     padding: "6px 10px",
@@ -2148,6 +2185,14 @@ customerNoteText: {
     fontSize: 12,
     fontWeight: 900,
     whiteSpace: "nowrap",
+  },
+  groupChevron: {
+    fontSize: 20,
+    fontWeight: 900,
+    opacity: 0.9,
+    minWidth: 24,
+    textAlign: "center",
+    color: "#fff",
   },
 
   customerShell: {
@@ -2230,6 +2275,16 @@ customerNoteText: {
     background: "rgba(255,77,79,0.10)",
     color: "#ffd6d6",
   },
+  cardBadgeNote: {
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    border: "1px solid rgba(168,139,250,0.45)",
+    background: "rgba(168,139,250,0.10)",
+    color: "#efe3ff",
+  },
   customerAddress: {
     marginTop: 8,
     fontSize: 16,
@@ -2299,6 +2354,27 @@ customerNoteText: {
     background: "rgba(255,77,79,0.08)",
     color: "#ffd6d6",
   },
+  cardIconBtn: {
+    width: 38,
+    height: 38,
+    minWidth: 38,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 16,
+    lineHeight: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardIconBtnNoteActive: {
+    border: "1px solid rgba(168,139,250,0.45)",
+    background: "rgba(168,139,250,0.10)",
+    color: "#efe3ff",
+  },
   cardExpandBtn: {
     width: 38,
     height: 38,
@@ -2317,5 +2393,80 @@ customerNoteText: {
     borderRadius: 18,
     border: "1px solid rgba(255,255,255,0.06)",
     background: "rgba(255,255,255,0.02)",
+  },
+
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.62)",
+    backdropFilter: "blur(4px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 1000,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 620,
+    borderRadius: 22,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "linear-gradient(180deg, rgba(18,18,18,0.98) 0%, rgba(10,10,10,0.96) 100%)",
+    boxShadow: "0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03)",
+    padding: 18,
+    color: "#fff",
+  },
+  modalHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 950,
+    letterSpacing: -0.3,
+  },
+  modalSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    opacity: 0.78,
+  },
+  modalCloseBtn: {
+    width: 40,
+    height: 40,
+    minWidth: 40,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 900,
+    fontSize: 16,
+  },
+  modalActions: {
+    marginTop: 16,
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  modalBtnSecondary: {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid #2f2f2f",
+    background: "#1a1a1a",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: 800,
+  },
+  modalBtnPrimary: {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid #a88bfa",
+    background: "rgba(168,139,250,0.14)",
+    color: "#efe3ff",
+    cursor: "pointer",
+    fontWeight: 900,
   },
 };
