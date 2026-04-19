@@ -305,18 +305,39 @@ function twoOpt(route: RouteStop[], hq: { lat: number; lng: number }) {
   return best;
 }
 
-function openGoogleMapsRoute(points: { lat: number; lng: number; label?: string }[]) {
+function openGoogleMapsRoute(
+  points: { lat: number; lng: number; label?: string }[],
+  liveOrigin?: { lat: number; lng: number } | null
+) {
   const usable = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+
   if (usable.length < 1) {
     alert("Vælg mindst 1 kunde med koordinater for at lave en rute.");
     return;
   }
 
-  const HQ = "55.10692093390334,14.822756898314669";
-  const origin = HQ;
-  const destination = HQ;
+  const origin = liveOrigin
+    ? `${liveOrigin.lat},${liveOrigin.lng}`
+    : "55.10692093390334,14.822756898314669";
 
-  const waypoints = usable.map((p) => `${p.lat},${p.lng}`).join("|");
+  if (usable.length === 1) {
+    const only = usable[0];
+    const url =
+      `https://www.google.com/maps/dir/?api=1` +
+      `&origin=${encodeURIComponent(origin)}` +
+      `&destination=${encodeURIComponent(`${only.lat},${only.lng}`)}` +
+      `&travelmode=driving`;
+
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const destination = `${usable[usable.length - 1].lat},${usable[usable.length - 1].lng}`;
+  const waypoints = usable
+    .slice(0, -1)
+    .map((p) => `${p.lat},${p.lng}`)
+    .join("|");
+
   const url =
     `https://www.google.com/maps/dir/?api=1` +
     `&origin=${encodeURIComponent(origin)}` +
@@ -466,6 +487,9 @@ export default function KortPage() {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
   const [mapsReady, setMapsReady] = useState(false);
+  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const userMarkerRef = useRef<google.maps.Marker | null>(null);
 
   useEffect(() => {
     (window as any).gm_authFailure = () => {
@@ -479,6 +503,33 @@ export default function KortPage() {
     };
   }, []);
 
+useEffect(() => {
+  if (!navigator.geolocation) return;
+
+  watchIdRef.current = navigator.geolocation.watchPosition(
+    (pos) => {
+      setUserPosition({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      });
+    },
+    (err) => {
+      console.warn("Geolocation fejl:", err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 10000,
+      timeout: 20000,
+    }
+  );
+
+  return () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+  };
+}, []);
+
   const selectedPoints = useMemo(() => {
     const pts: { lat: number; lng: number; label?: string }[] = [];
     for (const s of [...stops].sort((a, b) => a.order_index - b.order_index)) {
@@ -489,10 +540,10 @@ export default function KortPage() {
   }, [stops]);
 
   const routeStats = useMemo(() => {
-    const HQ = {
-      lat: 55.10692093390334,
-      lng: 14.822756898314669,
-    };
+  const HQ = userPosition ?? {
+    lat: 55.10692093390334,
+    lng: 14.822756898314669,
+  };
 
     const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
 
@@ -871,18 +922,24 @@ export default function KortPage() {
     const g = (window as any).google as typeof google;
 
     if (!mapRef.current) {
-      const bornholm = { lat: 55.10692093390334, lng: 14.822756898314669 };
-      mapRef.current = new g.maps.Map(mapDivRef.current, {
-        center: bornholm,
-        zoom: 10,
-        mapTypeControl: true,
-        mapId: mapId || undefined,
-      });
-      infoWindowRef.current = new g.maps.InfoWindow();
-    } else {
-      mapRef.current.setOptions({ mapId: mapId || undefined });
-    }
-  }, [mapsReady, mapId]);
+  const initialCenter = userPosition ?? { lat: 55.10692093390334, lng: 14.822756898314669 };
+
+  mapRef.current = new g.maps.Map(mapDivRef.current, {
+    center: initialCenter,
+    zoom: userPosition ? 14 : 10,
+    mapTypeControl: true,
+    mapId: mapId || undefined,
+  });
+
+  infoWindowRef.current = new g.maps.InfoWindow();
+} else {
+  mapRef.current.setOptions({ mapId: mapId || undefined });
+
+  if (userPosition) {
+    mapRef.current.setCenter(userPosition);
+  }
+}
+  }, [mapsReady, mapId, userPosition]);
 
   useEffect(() => {
     const g = (window as any).google as typeof google | undefined;
@@ -892,18 +949,35 @@ export default function KortPage() {
     for (const m of markersRef.current) m.setMap(null);
     markersRef.current = [];
 
+    if (userMarkerRef.current) {
+    userMarkerRef.current.setMap(null);
+    userMarkerRef.current = null;
+    }
+
     const bounds = new g.maps.LatLngBounds();
-    const HQ_POS = { lat: 55.10692093390334, lng: 14.822756898314669 };
+const HQ_POS = { lat: 55.10692093390334, lng: 14.822756898314669 };
 
-    const hqMarker = new g.maps.Marker({
-      map,
-      position: HQ_POS,
-      title: "HQ – Kirkemøllevejen 2, Vestermarie",
-      label: "HQ",
-    });
+const hqMarker = new g.maps.Marker({
+  map,
+  position: HQ_POS,
+  title: "HQ – Kirkemøllevejen 2, Vestermarie",
+  label: "HQ",
+});
 
-    markersRef.current.push(hqMarker);
-    bounds.extend(HQ_POS);
+markersRef.current.push(hqMarker);
+bounds.extend(HQ_POS);
+
+if (userPosition) {
+  userMarkerRef.current = new g.maps.Marker({
+    map,
+    position: userPosition,
+    title: "Min position",
+    label: "Mig",
+    zIndex: 999,
+  });
+
+  bounds.extend(userPosition);
+}
 
     const sorted = [...stops].sort((a, b) => a.order_index - b.order_index);
 
@@ -1058,7 +1132,7 @@ export default function KortPage() {
       map.setCenter(HQ_POS);
       map.setZoom(12);
     }
-  }, [stops, todayBinsByCustomer, binOpportunityByCustomerBin, routeDate, mapsReady]);
+  }, [stops, todayBinsByCustomer, binOpportunityByCustomerBin, routeDate, mapsReady, userPosition]);
 
   async function addCustomerToRoute(customerId: string) {
     if (!routeDay) return;
@@ -1510,10 +1584,10 @@ export default function KortPage() {
 
       if (stops.length < 2) return;
 
-      const HQ = {
-        lat: 55.10692093390334,
-        lng: 14.822756898314669,
-      };
+      const HQ = userPosition ?? {
+      lat: 55.10692093390334,
+      lng: 14.822756898314669,
+  };
 
       const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
 
@@ -1849,6 +1923,22 @@ export default function KortPage() {
         </div>
       )}
 
+<div
+  style={{
+    marginTop: 10,
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: userPosition ? "1px solid #2ecc71" : "1px solid #555",
+    background: userPosition ? "rgba(46,204,113,0.08)" : "rgba(255,255,255,0.04)",
+    color: userPosition ? "#dff7e8" : "#d0d0d0",
+    fontWeight: 800,
+    fontSize: 13,
+  }}
+>
+  {userPosition
+    ? `📍 Min position aktiv · ${userPosition.lat.toFixed(5)}, ${userPosition.lng.toFixed(5)}`
+    : "📍 Min position ikke fundet endnu — bruger HQ som fallback"}
+</div>
       <div
         style={{
           marginTop: 14,
@@ -1898,7 +1988,7 @@ export default function KortPage() {
 
         {!isMobile ? (
           <button
-            onClick={() => openGoogleMapsRoute(selectedPoints)}
+            onClick={() => openGoogleMapsRoute(selectedPoints, userPosition)}
             disabled={selectedPoints.length < 1}
             style={{
               padding: "12px 16px",
@@ -1912,7 +2002,7 @@ export default function KortPage() {
               minHeight: 46,
             }}
           >
-            Åbn rute (fra HQ)
+            Åbn rute
           </button>
         ) : null}
 
@@ -2001,7 +2091,7 @@ export default function KortPage() {
         {isMobile ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <button
-              onClick={() => openGoogleMapsRoute(selectedPoints)}
+              onClick={() => openGoogleMapsRoute(selectedPoints, userPosition)}
               disabled={selectedPoints.length < 1}
               style={{
                 padding: "12px 14px",
