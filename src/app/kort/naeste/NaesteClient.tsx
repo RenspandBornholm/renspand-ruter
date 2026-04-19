@@ -49,22 +49,47 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getCurrentPositionPromise() {
+  return new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation understøttes ikke på denne enhed."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 15000,
+    });
+  });
+}
+
 /**
  * Åbner Google Maps i samme "app/tab".
- * - Har koordinater: navigation fra HQ -> kunden
+ * - Har koordinater: navigation fra din position -> kunden
  * - Ellers: maps search på adresse
  */
-function openGoogleMapsToCustomer(c: Customer) {
+async function openGoogleMapsToCustomer(c: Customer) {
   const hasCoords =
     Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
 
+  const fallbackOrigin = "55.10692093390334,14.822756898314669";
+
+  let origin = fallbackOrigin;
+
+  try {
+    const pos = await getCurrentPositionPromise();
+    origin = `${pos.coords.latitude},${pos.coords.longitude}`;
+  } catch {
+    // falder tilbage til HQ hvis telefonens GPS ikke giver position
+  }
+
   if (hasCoords) {
-    const HQ = "55.10692093390334,14.822756898314669";
     const destination = `${c.lat},${c.lng}`;
 
     const url =
       `https://www.google.com/maps/dir/?api=1` +
-      `&origin=${encodeURIComponent(HQ)}` +
+      `&origin=${encodeURIComponent(origin)}` +
       `&destination=${encodeURIComponent(destination)}` +
       `&travelmode=driving`;
 
@@ -76,8 +101,10 @@ function openGoogleMapsToCustomer(c: Customer) {
   if (!addr) return;
 
   const url =
-    `https://www.google.com/maps/search/?api=1` +
-    `&query=${encodeURIComponent(addr)}`;
+    `https://www.google.com/maps/dir/?api=1` +
+    `&origin=${encodeURIComponent(origin)}` +
+    `&destination=${encodeURIComponent(addr)}` +
+    `&travelmode=driving`;
 
   window.location.href = url;
 }
@@ -434,12 +461,12 @@ export default function NaestePage() {
 
       const nextPlanned = findNextPlannedIndex(idx);
       if (nextPlanned >= 0) {
-        setIdx(nextPlanned);
+  setIdx(nextPlanned);
 
-        const next = sortedStops[nextPlanned];
-        const c = next?.customer;
-        if (c) openGoogleMapsToCustomer(c);
-      }
+  const next = sortedStops[nextPlanned];
+  const c = next?.customer;
+  if (c) await openGoogleMapsToCustomer(c);
+}
     } catch (e: any) {
       setShowSuccessOverlay(false);
       setError(String(e?.message ?? e));
@@ -629,11 +656,11 @@ export default function NaestePage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 180 }}>
               <button
-                onClick={() => {
-                  const c = current.customer;
-                  if (!c) return;
-                  openGoogleMapsToCustomer(c);
-                }}
+                onClick={async () => {
+                const c = current.customer;
+                if (!c) return;
+                await openGoogleMapsToCustomer(c);
+}}
                 style={{
                   padding: "10px 12px",
                   borderRadius: 12,
