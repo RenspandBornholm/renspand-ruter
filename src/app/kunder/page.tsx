@@ -819,9 +819,11 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
   week_group: "",
   frequency_type: serviceType === "subscription" ? binSelections[bin].frequency_type : "monthly",
   frequency_months:
-    serviceType === "subscription" && binSelections[bin].frequency_type === "monthly"
-      ? binSelections[bin].frequency_months
-      : null,
+    serviceType === "subscription"
+      ? binSelections[bin].frequency_type === "monthly"
+        ? binSelections[bin].frequency_months
+        : 1
+      : 1,
   frequency_weeks:
     serviceType === "subscription" && binSelections[bin].frequency_type === "weekly"
       ? binSelections[bin].frequency_weeks
