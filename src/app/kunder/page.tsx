@@ -9,7 +9,9 @@ import AppHeader from "@/app/components/AppHeader";
 type ServiceType = "single" | "subscription";
 type CustomerType = "private" | "business";
 type BinType = "madaffald" | "rest_plast" | "pap_metal";
-type Freq = 1 | 2 | 3 | 6;
+type MonthFreq = 1 | 2 | 3 | 6;
+type WeekFreq = 1 | 2 | 3;
+type FrequencyType = "weekly" | "monthly";
 
 type CustomerRow = {
   id: string;
@@ -32,7 +34,9 @@ type BinRow = {
   bin_type: BinType;
   pickup_day: string | null;
   week_group: string | null;
+  frequency_type: "weekly" | "monthly" | null;
   frequency_months: number | null;
+  frequency_weeks: number | null;
   quantity: number | null;
   is_active: boolean | null;
 };
@@ -89,7 +93,9 @@ type BinSelectionState = Record<
   {
     selected: boolean;
     quantity: 1 | 2 | 3;
-    frequency_months: Freq;
+    frequency_type: FrequencyType;
+    frequency_months: MonthFreq;
+    frequency_weeks: WeekFreq;
   }
 >;
 
@@ -110,9 +116,27 @@ const QUANTITIES: Array<1 | 2 | 3> = [1, 2, 3];
 
 function getInitialBinState(): BinSelectionState {
   return {
-    madaffald: { selected: false, quantity: 1, frequency_months: 1 },
-    rest_plast: { selected: false, quantity: 1, frequency_months: 1 },
-    pap_metal: { selected: false, quantity: 1, frequency_months: 1 },
+    madaffald: {
+      selected: false,
+      quantity: 1,
+      frequency_type: "monthly",
+      frequency_months: 1,
+      frequency_weeks: 1,
+    },
+    rest_plast: {
+      selected: false,
+      quantity: 1,
+      frequency_type: "monthly",
+      frequency_months: 1,
+      frequency_weeks: 1,
+    },
+    pap_metal: {
+      selected: false,
+      quantity: 1,
+      frequency_type: "monthly",
+      frequency_months: 1,
+      frequency_weeks: 1,
+    },
   };
 }
 
@@ -366,6 +390,36 @@ export default function KunderPage() {
     }));
   }
 
+function updateBinFrequencyType(bin: BinType, type: FrequencyType) {
+  setBinSelections((prev) => ({
+    ...prev,
+    [bin]: {
+      ...prev[bin],
+      frequency_type: type,
+    },
+  }));
+}
+
+function updateBinMonthFrequency(bin: BinType, freq: MonthFreq) {
+  setBinSelections((prev) => ({
+    ...prev,
+    [bin]: {
+      ...prev[bin],
+      frequency_months: freq,
+    },
+  }));
+}
+
+function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
+  setBinSelections((prev) => ({
+    ...prev,
+    [bin]: {
+      ...prev[bin],
+      frequency_weeks: freq,
+    },
+  }));
+}
+
   function updateBinQuantity(bin: BinType, quantity: 1 | 2 | 3) {
     setBinSelections((prev) => ({
       ...prev,
@@ -504,7 +558,7 @@ export default function KunderPage() {
 
     const { data: bData, error: bErr } = await supabase
       .from("customer_bins")
-      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months,quantity,is_active")
+      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months,frequency_weeks,quantity,is_active")
       .in("customer_id", ids);
 
     if (bErr) {
@@ -766,15 +820,22 @@ export default function KunderPage() {
       const customerId = (inserted as { id: string }).id;
 
       const binRows = chosenBinList.map((bin) => ({
-        customer_id: customerId,
-        bin_type: bin,
-        pickup_day: "Man",
-        week_group: "",
-        frequency_months: serviceType === "subscription" ? binSelections[bin].frequency_months : 1,
-        quantity: binSelections[bin].quantity,
-        is_active: true,
-      }));
-
+  customer_id: customerId,
+  bin_type: bin,
+  pickup_day: "Man",
+  week_group: "",
+  frequency_type: serviceType === "subscription" ? binSelections[bin].frequency_type : "monthly",
+  frequency_months:
+    serviceType === "subscription" && binSelections[bin].frequency_type === "monthly"
+      ? binSelections[bin].frequency_months
+      : null,
+  frequency_weeks:
+    serviceType === "subscription" && binSelections[bin].frequency_type === "weekly"
+      ? binSelections[bin].frequency_weeks
+      : null,
+  quantity: binSelections[bin].quantity,
+  is_active: true,
+}));
       const { error: binsErr } = await supabase.from("customer_bins").insert(binRows);
 
       if (binsErr) {
@@ -1247,7 +1308,13 @@ export default function KunderPage() {
                         {BIN_ICON[b.bin_type]} {BIN_LABEL[b.bin_type]}
                         <span style={{ opacity: 0.8, fontWeight: 500 }}>
                           {" "}
-                          ×{qty} · {service === "subscription" ? `${b.frequency_months ?? 1} md.` : "Enkelt"}
+                          ×{qty} · {service === "subscription"
+  ? b.frequency_type === "weekly"
+    ? b.frequency_weeks === 1
+      ? "Hver uge"
+      : `Hver ${b.frequency_weeks} uge`
+    : `${b.frequency_months ?? 1} md.`
+  : "Enkelt"}
                         </span>
                       </div>
 
@@ -1700,27 +1767,77 @@ export default function KunderPage() {
                         </div>
 
                         {serviceType === "subscription" ? (
-                          <div style={{ flex: 1 }}>
-                            <div style={styles.smallLabel}>Frekvens</div>
-                            <div style={styles.freqRow}>
-                              {FREQS.map((f) => {
-                                const active = freq === f;
-                                return (
-                                  <button
-                                    type="button"
-                                    key={f}
-                                    onClick={() => updateBinFrequency(bin, f)}
-                                    style={{ ...styles.pillBtn, ...(active ? styles.pillBtnActive : {}) }}
-                                  >
-                                    {f} md.
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ opacity: 0.8, fontSize: 13 }}>Enkelt vask: ingen frekvens (1 gang)</div>
-                        )}
+  <div style={{ display: "grid", gap: 12, width: "100%" }}>
+    <div>
+      <div style={styles.smallLabel}>Frekvenstype</div>
+      <div style={styles.freqRow}>
+        <button
+          type="button"
+          onClick={() => updateBinFrequencyType(bin, "weekly")}
+          style={{
+            ...styles.pillBtn,
+            ...(binSelections[bin].frequency_type === "weekly" ? styles.pillBtnActive : {}),
+          }}
+        >
+          Uger
+        </button>
+
+        <button
+          type="button"
+          onClick={() => updateBinFrequencyType(bin, "monthly")}
+          style={{
+            ...styles.pillBtn,
+            ...(binSelections[bin].frequency_type === "monthly" ? styles.pillBtnActive : {}),
+          }}
+        >
+          Måneder
+        </button>
+      </div>
+    </div>
+
+    {binSelections[bin].frequency_type === "weekly" ? (
+      <div>
+        <div style={styles.smallLabel}>Ugefrekvens</div>
+        <div style={styles.freqRow}>
+          {[1, 2, 3].map((f) => {
+            const active = binSelections[bin].frequency_weeks === f;
+            return (
+              <button
+                type="button"
+                key={f}
+                onClick={() => updateBinWeekFrequency(bin, f as WeekFreq)}
+                style={{ ...styles.pillBtn, ...(active ? styles.pillBtnActive : {}) }}
+              >
+                {f === 1 ? "Hver uge" : f === 2 ? "Hver 2 uge" : "Hver 3 uge"}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : (
+      <div>
+        <div style={styles.smallLabel}>Månedsfrekvens</div>
+        <div style={styles.freqRow}>
+          {FREQS.map((f) => {
+            const active = binSelections[bin].frequency_months === f;
+            return (
+              <button
+                type="button"
+                key={f}
+                onClick={() => updateBinMonthFrequency(bin, f)}
+                style={{ ...styles.pillBtn, ...(active ? styles.pillBtnActive : {}) }}
+              >
+                {f} md.
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    )}
+  </div>
+) : (
+  <div style={{ opacity: 0.8, fontSize: 13 }}>Enkelt vask: ingen frekvens (1 gang)</div>
+)}
                       </div>
                     )}
                   </div>
