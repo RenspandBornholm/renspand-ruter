@@ -111,7 +111,8 @@ const BIN_ICON: Record<BinType, string> = {
   pap_metal: "♻️",
 };
 
-const FREQS: Freq[] = [1, 2, 3, 6];
+const FREQS: MonthFreq[] = [1, 2, 3, 6];
+const WEEK_FREQS: WeekFreq[] = [1, 2, 3];
 const QUANTITIES: Array<1 | 2 | 3> = [1, 2, 3];
 
 function getInitialBinState(): BinSelectionState {
@@ -380,15 +381,7 @@ export default function KunderPage() {
     }));
   }
 
-  function updateBinFrequency(bin: BinType, freq: Freq) {
-    setBinSelections((prev) => ({
-      ...prev,
-      [bin]: {
-        ...prev[bin],
-        frequency_months: freq,
-      },
-    }));
-  }
+  
 
 function updateBinFrequencyType(bin: BinType, type: FrequencyType) {
   setBinSelections((prev) => ({
@@ -558,7 +551,7 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
 
     const { data: bData, error: bErr } = await supabase
       .from("customer_bins")
-      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_months,frequency_weeks,quantity,is_active")
+      .select("id,customer_id,bin_type,pickup_day,week_group,frequency_type,frequency_months,frequency_weeks,quantity,is_active")
       .in("customer_id", ids);
 
     if (bErr) {
