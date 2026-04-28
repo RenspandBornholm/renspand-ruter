@@ -340,6 +340,7 @@ export default function KunderPage() {
   const [binsByCustomer, setBinsByCustomer] = useState<Record<string, BinRow[]>>({});
   const [lastDoneByCustomer, setLastDoneByCustomer] = useState<Record<string, string | null>>({});
   const [nextPickupByCustomerBin, setNextPickupByCustomerBin] = useState<Record<string, string | null>>({});
+  const [lastPickupByCustomerBin, setLastPickupByCustomerBin] = useState<Record<string, string | null>>({});
   const [binOpportunityByCustomerBin, setBinOpportunityByCustomerBin] = useState<Record<string, BinOpportunityInfo>>(
     {}
   );
@@ -602,6 +603,7 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
       setBinsByCustomer({});
       setLastDoneByCustomer({});
       setNextPickupByCustomerBin({});
+      setLastPickupByCustomerBin({});
       setBinOpportunityByCustomerBin({});
       setDoneThisCycleByCustomerBin({});
       setLatestDocByCustomer({});
@@ -618,6 +620,7 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
       setBinsByCustomer({});
       setLastDoneByCustomer({});
       setNextPickupByCustomerBin({});
+      setLastPickupByCustomerBin({});
       setBinOpportunityByCustomerBin({});
       setDoneThisCycleByCustomerBin({});
       setLatestDocByCustomer({});
@@ -655,15 +658,25 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
       .order("pickup_date", { ascending: true });
 
     if (!pErr) {
-      const nextMap: Record<string, string | null> = {};
-      for (const row of (pData ?? []) as Array<{ customer_id: string; bin_type: string; pickup_date: string }>) {
-        const key = `${row.customer_id}__${row.bin_type}`;
-        if (nextMap[key] === undefined) nextMap[key] = row.pickup_date;
-      }
-      setNextPickupByCustomerBin(nextMap);
-    } else {
-      setNextPickupByCustomerBin({});
+  const nextMap: Record<string, string | null> = {};
+  const lastMap: Record<string, string | null> = {};
+
+  for (const row of (pData ?? []) as Array<{ customer_id: string; bin_type: string; pickup_date: string }>) {
+    const key = `${row.customer_id}__${row.bin_type}`;
+
+    if (nextMap[key] === undefined) {
+      nextMap[key] = row.pickup_date;
     }
+
+    lastMap[key] = row.pickup_date;
+  }
+
+  setNextPickupByCustomerBin(nextMap);
+  setLastPickupByCustomerBin(lastMap);
+} else {
+  setNextPickupByCustomerBin({});
+  setLastPickupByCustomerBin({});
+}
 
     const { data: monthPickupData, error: monthPickupErr } = await supabase
       .from("bofa_pickups")
@@ -1351,6 +1364,7 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
             <div style={{ display: "grid", gap: 10 }}>
               {bins.map((b) => {
                 const next = nextPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
+                const lastImported = lastPickupByCustomerBin[`${c.id}__${b.bin_type}`] ?? null;
                 const isActive = b.is_active !== false;
                 const isSingle = service === "single";
                 const qty = Math.max(1, Number(b.quantity ?? 1));
@@ -1392,7 +1406,7 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
                           <span style={styles.pill}>BOFA næste: {formatYMDFromISO(next)}</span>
                         ) : null}
 {(() => {
-  if (!next) {
+  if (!lastImported) {
     return (
       <span style={{
         ...styles.pill,
@@ -1400,14 +1414,14 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
         background: "rgba(255,77,79,0.10)",
         color: "#ffd6d6",
       }}>
-        ❌ Ingen datoer
+        ❌ Ingen importerede datoer
       </span>
     );
   }
 
-  const days = daysUntil(next);
+  const days = daysUntil(lastImported);
 
-  if (days !== null && days <= 14) {
+  if (days !== null && days <= 30) {
     return (
       <span style={{
         ...styles.pill,
@@ -1415,12 +1429,21 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
         background: "rgba(241,196,15,0.10)",
         color: "#fff0b3",
       }}>
-        ⚠️ Snart slut ({days} dage)
+        ⚠️ Import snart ({days} dage)
       </span>
     );
   }
 
-  return null;
+  return (
+    <span style={{
+      ...styles.pill,
+      border: "1px solid #2ecc71",
+      background: "rgba(46,204,113,0.08)",
+      color: "#dff7e8",
+    }}>
+      Import OK til {formatYMDFromISO(lastImported)}
+    </span>
+  );
 })()}
                       </div>
                     </div>
