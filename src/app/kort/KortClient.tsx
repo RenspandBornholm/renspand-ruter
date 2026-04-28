@@ -2577,11 +2577,37 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                         </button>
 
                        <button
+  type="button"
   onClick={async () => {
+    alert("Spring over klik virker");
+
     try {
-      await updateStop(s.id, { status: "postponed", done_at: null });
+      setError(null);
+
+      const { error } = await supabase
+        .from("route_stops")
+        .update({ status: "postponed", done_at: null })
+        .eq("id", s.id);
+
+      if (error) {
+        alert("Supabase fejl: " + error.message);
+        setError(error.message);
+        return;
+      }
+
+      alert("Gemt som sprunget over");
+
+      setStops((prev) =>
+        prev.map((stop) =>
+          stop.id === s.id
+            ? { ...stop, status: "postponed", done_at: null }
+            : stop
+        )
+      );
+
       await refreshBinOpportunityForCurrentStops();
     } catch (e: any) {
+      alert("Fejl: " + String(e?.message ?? e));
       setError(String(e?.message ?? e));
     }
   }}
@@ -2589,7 +2615,7 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
     padding: "8px 14px",
     borderRadius: 12,
     border: "1px solid #f1c40f",
-    background: "rgba(241,196,15,0.12)",
+    background: "#3a2f00",
     color: "#fff0b3",
     cursor: "pointer",
     fontWeight: 900,
