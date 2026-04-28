@@ -1390,10 +1390,8 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
 
                         {next ? (
                           <span style={styles.pill}>BOFA næste: {formatYMDFromISO(next)}</span>
-                        )
+                        ) : null}
 {(() => {
-  const days = daysUntil(next);
-
   if (!next) {
     return (
       <span style={{
@@ -1406,6 +1404,8 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
       </span>
     );
   }
+
+  const days = daysUntil(next);
 
   if (days !== null && days <= 14) {
     return (
