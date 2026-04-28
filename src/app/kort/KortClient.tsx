@@ -141,8 +141,11 @@ function isBinDueByFrequency(
     return candidateCleaningDateYMD >= nextAllowedYMD;
   }
 
+  // 🔴 HER ER FIXET
   const months = Math.max(1, Number(frequencyMonths ?? 1));
   const nextAllowedYMD = addMonthsYMD(lastDoneYMD, months);
+
+  // Tillad KUN første gyldige dato efter næsteAllowed
   return candidateCleaningDateYMD >= nextAllowedYMD;
 }
 
@@ -163,6 +166,15 @@ function getDueCleaningDatesByFrequency(
       return (index + 1) % everyNthPickup === 0;
     });
   }
+
+  // 🔴 FIX FOR MONTHLY
+  const months = Math.max(1, Number(frequencyMonths ?? 1));
+  const nextAllowedYMD = addMonthsYMD(lastDoneYMD, months);
+
+  const firstValid = uniqueCleaningDates.find((d) => d >= nextAllowedYMD);
+
+  return firstValid ? [firstValid] : [];
+}
 
   return uniqueCleaningDates.filter((candidateDate) =>
     isBinDueByFrequency(
