@@ -176,16 +176,6 @@ function getDueCleaningDatesByFrequency(
   return firstValid ? [firstValid] : [];
 }
 
-  return uniqueCleaningDates.filter((candidateDate) =>
-    isBinDueByFrequency(
-      lastDoneYMD,
-      frequencyType,
-      frequencyMonths,
-      frequencyWeeks,
-      candidateDate
-    )
-  );
-}
 
 function counterBadgeStyle(count: number): React.CSSProperties {
   if (count <= 1) {
