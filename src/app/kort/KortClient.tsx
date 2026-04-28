@@ -1763,6 +1763,15 @@ if (userPosition) {
     frequency_weeks: number | null;
   }
 > = {};
+for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
+  const key = `${row.customer_id}__${row.bin_type}`;
+
+  activeBinConfigMap[key] = {
+    frequency_type: row.frequency_type ?? "monthly",
+    frequency_months: row.frequency_months,
+    frequency_weeks: row.frequency_weeks,
+  };
+}
 
       const latestDoneByCustomerBin: Record<string, string | null> = {};
 
