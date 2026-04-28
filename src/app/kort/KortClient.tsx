@@ -141,6 +141,35 @@ function isBinDueByFrequency(
     return candidateCleaningDateYMD >= nextAllowedYMD;
   }
 
+function getDueCleaningDatesByFrequency(
+  uniqueCleaningDates: string[],
+  lastDoneYMD: string | null,
+  frequencyType: "weekly" | "monthly" | null,
+  frequencyMonths: number | null,
+  frequencyWeeks: number | null
+) {
+  if (!lastDoneYMD) return uniqueCleaningDates;
+
+  if (frequencyType === "weekly") {
+    const everyNthPickup = Math.max(1, Number(frequencyWeeks ?? 1));
+
+    const datesAfterLastDone = uniqueCleaningDates.filter((d) => d > lastDoneYMD);
+
+    return datesAfterLastDone.filter((_, index) => {
+      return (index + 1) % everyNthPickup === 0;
+    });
+  }
+
+  return uniqueCleaningDates.filter((candidateDate) =>
+    isBinDueByFrequency(
+      lastDoneYMD,
+      frequencyType,
+      frequencyMonths,
+      frequencyWeeks,
+      candidateDate
+    )
+  );
+}
   const months = Math.max(1, Number(frequencyMonths ?? 1));
   const nextAllowedYMD = addMonthsYMD(lastDoneYMD, months);
   return candidateCleaningDateYMD >= nextAllowedYMD;
@@ -823,14 +852,12 @@ useEffect(() => {
       const lastDoneYMD = latestDoneByCustomerBin[key] ?? null;
       const uniqueCleaningDates = Array.from(new Set(cleaningDatesRaw)).sort();
 
-      const dueCleaningDates = uniqueCleaningDates.filter((candidateDate) =>
-  isBinDueByFrequency(
-    lastDoneYMD,
-    config.frequency_type,
-    config.frequency_months,
-    config.frequency_weeks,
-    candidateDate
-  )
+      const dueCleaningDates = getDueCleaningDatesByFrequency(
+  uniqueCleaningDates,
+  lastDoneYMD,
+  config.frequency_type,
+  config.frequency_months,
+  config.frequency_weeks
 );
 
       const remainingCount = dueCleaningDates.filter(
