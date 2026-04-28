@@ -2579,37 +2579,21 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                        <button
   type="button"
   onClick={async () => {
-    alert("1 klik virker");
-
     try {
       setError(null);
 
-      alert("2 før Supabase");
-
-      const { data, error } = await supabase
-        .from("route_stops")
-        .update({ status: "postponed", done_at: null })
-        .eq("id", s.id)
-        .select("id,status")
-        .single();
-
-      alert("3 efter Supabase");
-
-      if (error) {
-        alert("Supabase fejl: " + error.message);
-        setError(error.message);
-        return;
-      }
-
-      alert("Gemt: " + JSON.stringify(data));
+      await updateStop(s.id, { status: "postponed", done_at: null });
 
       setStops((prev) =>
         prev.map((stop) =>
-          stop.id === s.id ? { ...stop, status: "postponed", done_at: null } : stop
+          stop.id === s.id
+            ? { ...stop, status: "postponed", done_at: null }
+            : stop
         )
       );
+
+      await refreshBinOpportunityForCurrentStops();
     } catch (e: any) {
-      alert("Catch fejl: " + String(e?.message ?? e));
       setError(String(e?.message ?? e));
     }
   }}
