@@ -2325,7 +2325,14 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
 
                 {sortedStops.map((s, i) => {
                   const c = s.customer;
-                  const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
+                  const statusColor =
+  s.status === "done"
+    ? "#2ecc71"
+    : s.status === "skipped"
+    ? "#ff4d4f"
+    : s.status === "postponed"
+    ? "#f1c40f"
+    : "#999";
                   const todays =
                     Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
                       ? s.planned_bin_types
@@ -2337,7 +2344,13 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                         <div style={{ fontWeight: 900 }}>
                           {i + 1}. {c?.name ?? "(ukendt)"}{" "}
                           <span style={{ marginLeft: 8, color: statusColor, fontWeight: 900 }}>
-                            {s.status === "planned" ? "PLAN" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
+                            {s.status === "planned"
+  ? "PLAN"
+  : s.status === "done"
+  ? "RENGJORT"
+  : s.status === "postponed"
+  ? "SPRINGET OVER"
+  : "IKKE MULIGT"}
                           </span>
                         </div>
 
