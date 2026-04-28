@@ -18,6 +18,7 @@ type Customer = {
   lng: number | null;
   phone: string | null;
   email: string | null;
+  service_type: "single" | "subscription" | null;
 };
 
 type RouteDay = {
@@ -636,7 +637,7 @@ useEffect(() => {
   async function loadCustomers() {
     const { data, error } = await supabase
       .from("customers")
-      .select("id,name,address,city,lat,lng,phone,email")
+      .select("id,name,address,city,lat,lng,phone,email,service_type")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -2441,7 +2442,34 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                                     fontWeight: 900,
                                   }}
                                 >
-                                  {binIconShort(bt)} {binLabelShort(bt)}
+                                  <span
+  style={{
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    marginRight: 6,
+    fontSize: 10,
+    fontWeight: 900,
+    border:
+      c?.service_type === "subscription"
+        ? "1px solid #2ecc71"
+        : "1px solid #4ea1ff",
+    background:
+      c?.service_type === "subscription"
+        ? "rgba(46,204,113,0.16)"
+        : "rgba(78,161,255,0.14)",
+    color:
+      c?.service_type === "subscription"
+        ? "#dff7e8"
+        : "#dbeeff",
+  }}
+>
+  {c?.service_type === "subscription" ? "A" : "E"}
+</span>
+{binIconShort(bt)} {binLabelShort(bt)}
                                 </span>
 
                                 {s.status === "done" ? (
@@ -2718,7 +2746,34 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                                   fontWeight: 900,
                                 }}
                               >
-                                {binIconShort(bt)} {binLabelShort(bt)}
+                                <span
+  style={{
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    marginRight: 6,
+    fontSize: 10,
+    fontWeight: 900,
+    border:
+      c?.service_type === "subscription"
+        ? "1px solid #2ecc71"
+        : "1px solid #4ea1ff",
+    background:
+      c?.service_type === "subscription"
+        ? "rgba(46,204,113,0.16)"
+        : "rgba(78,161,255,0.14)",
+    color:
+      c?.service_type === "subscription"
+        ? "#dff7e8"
+        : "#dbeeff",
+  }}
+>
+  {c?.service_type === "subscription" ? "A" : "E"}
+</span>
+{binIconShort(bt)} {binLabelShort(bt)}
                               </span>
 
                               {s.status === "done" ? (
