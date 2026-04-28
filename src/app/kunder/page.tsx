@@ -165,6 +165,18 @@ function toYMD(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+function daysUntil(dateYMD: string | null) {
+  if (!dateYMD) return null;
+
+  const today = new Date();
+  const target = new Date(dateYMD);
+
+  const diff = target.getTime() - today.getTime();
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+
+  return days;
+}
+
 function addDaysYMD(ymd: string, days: number) {
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
@@ -1378,9 +1390,38 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
 
                         {next ? (
                           <span style={styles.pill}>BOFA næste: {formatYMDFromISO(next)}</span>
-                        ) : (
-                          <span style={{ fontSize: 12, opacity: 0.65 }}>Ingen datoer</span>
-                        )}
+                        )
+{(() => {
+  const days = daysUntil(next);
+
+  if (!next) {
+    return (
+      <span style={{
+        ...styles.pill,
+        border: "1px solid #ff4d4f",
+        background: "rgba(255,77,79,0.10)",
+        color: "#ffd6d6",
+      }}>
+        ❌ Ingen datoer
+      </span>
+    );
+  }
+
+  if (days !== null && days <= 14) {
+    return (
+      <span style={{
+        ...styles.pill,
+        border: "1px solid #f1c40f",
+        background: "rgba(241,196,15,0.10)",
+        color: "#fff0b3",
+      }}>
+        ⚠️ Snart slut ({days} dage)
+      </span>
+    );
+  }
+
+  return null;
+})()}
                       </div>
                     </div>
 
