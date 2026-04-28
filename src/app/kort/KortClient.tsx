@@ -70,7 +70,9 @@ type UpcomingRouteRow = {
 type ActiveBinConfigRow = {
   customer_id: string;
   bin_type: string;
+  frequency_type: "weekly" | "monthly" | null;
   frequency_months: number | null;
+  frequency_weeks: number | null;
   is_active: boolean | null;
 };
 
@@ -114,6 +116,10 @@ function addMonthsYMD(ymd: string, months: number) {
   return toYMD(dt);
 }
 
+function addWeeksYMD(ymd: string, weeks: number) {
+  return addDaysYMD(ymd, weeks * 7);
+}
+
 function endOfMonthYMD(ymd: string) {
   const [y, m] = ymd.split("-").map(Number);
   const dt = new Date(y, m ?? 1, 0);
@@ -122,14 +128,21 @@ function endOfMonthYMD(ymd: string) {
 
 function isBinDueByFrequency(
   lastDoneYMD: string | null,
+  frequencyType: "weekly" | "monthly" | null,
   frequencyMonths: number | null,
+  frequencyWeeks: number | null,
   candidateCleaningDateYMD: string
 ) {
   if (!lastDoneYMD) return true;
 
-  const freq = Math.max(1, Number(frequencyMonths ?? 1));
-  const nextAllowedYMD = addMonthsYMD(lastDoneYMD, freq);
+  if (frequencyType === "weekly") {
+    const weeks = Math.max(1, Number(frequencyWeeks ?? 1));
+    const nextAllowedYMD = addWeeksYMD(lastDoneYMD, weeks);
+    return candidateCleaningDateYMD >= nextAllowedYMD;
+  }
 
+  const months = Math.max(1, Number(frequencyMonths ?? 1));
+  const nextAllowedYMD = addMonthsYMD(lastDoneYMD, months);
   return candidateCleaningDateYMD >= nextAllowedYMD;
 }
 
@@ -580,7 +593,7 @@ useEffect(() => {
       km: routeStats.totalKm,
       minutes: routeStats.driveMinutes,
     };
-  }, [stops, routeStats.totalKm, routeStats.driveMinutes]);
+  }, [stops, routeStats.totalKm, routeStats.driveMinutes, userPosition]);
 
   useEffect(() => {
     (async () => {
@@ -723,20 +736,39 @@ useEffect(() => {
 
     const { data: binConfigRows, error: binConfigErr } = await supabase
       .from("customer_bins")
-      .select("customer_id,bin_type,is_active,frequency_months")
+      .select("customer_id,bin_type,is_active,frequency_type,frequency_months,frequency_weeks")
       .in("customer_id", uniqueCustomerIds)
       .eq("is_active", true);
 
     if (binConfigErr) throw binConfigErr;
 
-    const activeBinConfigMap: Record<string, { frequency_months: number | null }> = {};
+    const activeBinConfigMap: Record<
+  string,
+  {
+    frequency_type: "weekly" | "monthly" | null;
+    frequency_months: number | null;
+    frequency_weeks: number | null;
+  }
+> = {};
+
+for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
+  const key = `${row.customer_id}__${row.bin_type}`;
+
+  activeBinConfigMap[key] = {
+    frequency_type: row.frequency_type ?? "monthly",
+    frequency_months: row.frequency_months,
+    frequency_weeks: row.frequency_weeks,
+  };
+}
     const activeBinTypesByCustomer: Record<string, string[]> = {};
 
     for (const row of (binConfigRows ?? []) as ActiveBinConfigRow[]) {
       const key = `${row.customer_id}__${row.bin_type}`;
       activeBinConfigMap[key] = {
-        frequency_months: row.frequency_months,
-      };
+  frequency_type: row.frequency_type ?? "monthly",
+  frequency_months: row.frequency_months,
+  frequency_weeks: row.frequency_weeks,
+};
 
       (activeBinTypesByCustomer[row.customer_id] ||= []);
       if (!activeBinTypesByCustomer[row.customer_id].includes(row.bin_type)) {
@@ -801,8 +833,14 @@ useEffect(() => {
       const uniqueCleaningDates = Array.from(new Set(cleaningDatesRaw)).sort();
 
       const dueCleaningDates = uniqueCleaningDates.filter((candidateDate) =>
-        isBinDueByFrequency(lastDoneYMD, config.frequency_months, candidateDate)
-      );
+  isBinDueByFrequency(
+    lastDoneYMD,
+    config.frequency_type,
+    config.frequency_months,
+    config.frequency_weeks,
+    candidateDate
+  )
+);
 
       const remainingCount = dueCleaningDates.filter(
         (d) => d.startsWith(dateYMD.slice(0, 7)) && d >= dateYMD
@@ -1711,20 +1749,20 @@ if (userPosition) {
 
       const { data: activeBinsRows, error: activeBinsErr } = await supabase
         .from("customer_bins")
-        .select("customer_id,bin_type,is_active,frequency_months")
+        .select("customer_id,bin_type,is_active,frequency_type,frequency_months,frequency_weeks")
         .in("customer_id", candidateCustomerIds)
         .eq("is_active", true);
 
       if (activeBinsErr) throw activeBinsErr;
 
-      const activeBinConfigMap: Record<string, { frequency_months: number | null }> = {};
-
-      for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
-        const key = `${row.customer_id}__${row.bin_type}`;
-        activeBinConfigMap[key] = {
-          frequency_months: row.frequency_months,
-        };
-      }
+      const activeBinConfigMap: Record<
+  string,
+  {
+    frequency_type: "weekly" | "monthly" | null;
+    frequency_months: number | null;
+    frequency_weeks: number | null;
+  }
+> = {};
 
       const latestDoneByCustomerBin: Record<string, string | null> = {};
 
@@ -1757,10 +1795,12 @@ if (userPosition) {
 
         const lastDoneYMD = latestDoneByCustomerBin[key] ?? null;
         const isDueNow = isBinDueByFrequency(
-          lastDoneYMD,
-          activeConfig.frequency_months,
-          selectedDateYMD
-        );
+  lastDoneYMD,
+  activeConfig.frequency_type,
+  activeConfig.frequency_months,
+  activeConfig.frequency_weeks,
+  selectedDateYMD
+);
 
         if (!isDueNow) continue;
 
