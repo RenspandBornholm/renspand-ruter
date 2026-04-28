@@ -312,6 +312,10 @@ export default function KunderPage() {
   const [serviceType, setServiceType] = useState<ServiceType>("single");
   const [customerType, setCustomerType] = useState<CustomerType>("private");
 
+  const [convertCustomer, setConvertCustomer] = useState<CustomerRow | null>(null);
+  const [convertBins, setConvertBins] = useState<BinSelectionState>(getInitialBinState());
+  const [convertSaving, setConvertSaving] = useState(false);
+
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
@@ -1429,7 +1433,116 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
     );
   }
 
-  function renderCustomerCard(c: CustomerRow) {
+function openConvertModal(c: CustomerRow) {
+  const existingBins = binsByCustomer[c.id] ?? [];
+  const next = getInitialBinState();
+
+  for (const b of existingBins) {
+    next[b.bin_type] = {
+      selected: true,
+      quantity: Math.min(3, Math.max(1, Number(b.quantity ?? 1))) as 1 | 2 | 3,
+      frequency_type: b.frequency_type ?? "monthly",
+      frequency_months: (b.frequency_months ?? 1) as MonthFreq,
+      frequency_weeks: (b.frequency_weeks ?? 1) as WeekFreq,
+    };
+  }
+
+  setConvertCustomer(c);
+  setConvertBins(next);
+}
+
+function closeConvertModal() {
+  setConvertCustomer(null);
+  setConvertBins(getInitialBinState());
+}
+
+function updateConvertBin(bin: BinType, patch: Partial<BinSelectionState[BinType]>) {
+  setConvertBins((prev) => ({
+    ...prev,
+    [bin]: {
+      ...prev[bin],
+      ...patch,
+    },
+  }));
+}
+
+async function saveConvertToSubscription() {
+  if (!convertCustomer) return;
+
+  setError(null);
+  setConvertSaving(true);
+
+  try {
+    const customerId = convertCustomer.id;
+    const existingBins = binsByCustomer[customerId] ?? [];
+    const selectedBins = (Object.keys(convertBins) as BinType[]).filter((bin) => convertBins[bin].selected);
+
+    if (selectedBins.length === 0) {
+      setError("Vælg mindst én spand til abonnement.");
+      return;
+    }
+
+    const convertLine = `Konverteret fra enkeltvask til abonnement d. ${formatYMDFromISO(toYMD(new Date()))}`;
+
+    const { error: customerErr } = await supabase
+      .from("customers")
+      .update({
+        service_type: "subscription",
+        note: convertCustomer.note ? `${convertCustomer.note}\n${convertLine}` : convertLine,
+      })
+      .eq("id", customerId);
+
+    if (customerErr) throw customerErr;
+
+    for (const bin of selectedBins) {
+      const choice = convertBins[bin];
+      const existing = existingBins.find((b) => b.bin_type === bin);
+
+      const payload = {
+        frequency_type: choice.frequency_type,
+        frequency_months: choice.frequency_type === "monthly" ? choice.frequency_months : 1,
+        frequency_weeks: choice.frequency_type === "weekly" ? choice.frequency_weeks : null,
+        quantity: choice.quantity,
+        is_active: true,
+      };
+
+      if (existing) {
+        const { error } = await supabase.from("customer_bins").update(payload).eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("customer_bins").insert({
+          customer_id: customerId,
+          bin_type: bin,
+          pickup_day: "Man",
+          week_group: "",
+          ...payload,
+        });
+
+        if (error) throw error;
+      }
+    }
+
+    const notSelectedExisting = existingBins.filter((b) => !selectedBins.includes(b.bin_type));
+
+    for (const b of notSelectedExisting) {
+      const { error } = await supabase
+        .from("customer_bins")
+        .update({ is_active: false })
+        .eq("id", b.id);
+
+      if (error) throw error;
+    }
+
+    await loadCustomers();
+    closeConvertModal();
+  } catch (e: any) {
+    setError(String(e?.message ?? e));
+  } finally {
+    setConvertSaving(false);
+  }
+}  
+
+function renderCustomerCard(c: CustomerRow) {
     const hasCoords = Number.isFinite(c.lat ?? NaN) && Number.isFinite(c.lng ?? NaN);
     const lastDoneIso = lastDoneByCustomer[c.id] ?? null;
     const lastDoneYMD = lastDoneIso ? formatYMDFromISO(lastDoneIso) : null;
@@ -1538,6 +1651,20 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
             >
               📝 Rediger
             </button>
+
+            {service === "single" ? (
+  <button
+    onClick={() => openConvertModal(c)}
+    style={{
+      ...styles.cardActionBtn,
+      border: "1px solid rgba(46,204,113,0.45)",
+      background: "rgba(46,204,113,0.10)",
+      color: "#dff7e8",
+    }}
+  >
+    🔁 Konvertér til abo
+  </button>
+) : null}
 
             <button
               onClick={() => openNoteModal(c)}
@@ -2105,6 +2232,151 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
           </div>
         </div>
       ) : null}
+
+      {convertCustomer ? (
+  <div style={styles.modalOverlay} onClick={closeConvertModal}>
+    <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.modalHeader}>
+        <div>
+          <div style={styles.modalTitle}>Konvertér til abonnement</div>
+          <div style={styles.modalSubtitle}>{convertCustomer.name}</div>
+        </div>
+
+        <button type="button" onClick={closeConvertModal} style={styles.modalCloseBtn}>
+          ✕
+        </button>
+      </div>
+
+      <div style={{ marginTop: 14, opacity: 0.82, fontSize: 13 }}>
+        Vælg hvilke spande kunden vil have på abonnement. Eksisterende spande er automatisk valgt — også dem der står i bero.
+      </div>
+
+      <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+        {(Object.keys(BIN_LABEL) as BinType[]).map((bin) => {
+          const selected = convertBins[bin].selected;
+
+          return (
+            <div key={bin} style={styles.binBox}>
+              <label style={styles.binHeader}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => updateConvertBin(bin, { selected: !selected })}
+                  style={styles.checkbox}
+                />
+                <span style={styles.binName}>
+                  {BIN_ICON[bin]} {BIN_LABEL[bin]}
+                </span>
+              </label>
+
+              {selected ? (
+                <div style={styles.binSettingsRow}>
+                  <div>
+                    <div style={styles.smallLabel}>Antal</div>
+                    <div style={styles.freqRow}>
+                      {QUANTITIES.map((q) => (
+                        <button
+                          type="button"
+                          key={q}
+                          onClick={() => updateConvertBin(bin, { quantity: q })}
+                          style={{
+                            ...styles.pillBtn,
+                            ...(convertBins[bin].quantity === q ? styles.pillBtnActive : {}),
+                          }}
+                        >
+                          {q} stk.
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 12, width: "100%" }}>
+                    <div>
+                      <div style={styles.smallLabel}>Frekvenstype</div>
+                      <div style={styles.freqRow}>
+                        <button
+                          type="button"
+                          onClick={() => updateConvertBin(bin, { frequency_type: "weekly" })}
+                          style={{
+                            ...styles.pillBtn,
+                            ...(convertBins[bin].frequency_type === "weekly" ? styles.pillBtnActive : {}),
+                          }}
+                        >
+                          Uger
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateConvertBin(bin, { frequency_type: "monthly" })}
+                          style={{
+                            ...styles.pillBtn,
+                            ...(convertBins[bin].frequency_type === "monthly" ? styles.pillBtnActive : {}),
+                          }}
+                        >
+                          Måneder
+                        </button>
+                      </div>
+                    </div>
+
+                    {convertBins[bin].frequency_type === "weekly" ? (
+                      <div>
+                        <div style={styles.smallLabel}>Ugefrekvens</div>
+                        <div style={styles.freqRow}>
+                          {WEEK_FREQS.map((f) => (
+                            <button
+                              type="button"
+                              key={f}
+                              onClick={() => updateConvertBin(bin, { frequency_weeks: f })}
+                              style={{
+                                ...styles.pillBtn,
+                                ...(convertBins[bin].frequency_weeks === f ? styles.pillBtnActive : {}),
+                              }}
+                            >
+                              {f === 1 ? "Hver uge" : f === 2 ? "Hver 2. uge" : "Hver 3. uge"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={styles.smallLabel}>Månedsfrekvens</div>
+                        <div style={styles.freqRow}>
+                          {FREQS.map((f) => (
+                            <button
+                              type="button"
+                              key={f}
+                              onClick={() => updateConvertBin(bin, { frequency_months: f })}
+                              style={{
+                                ...styles.pillBtn,
+                                ...(convertBins[bin].frequency_months === f ? styles.pillBtnActive : {}),
+                              }}
+                            >
+                              {f} md.
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={styles.modalActions}>
+        <button type="button" onClick={closeConvertModal} disabled={convertSaving} style={styles.modalBtnSecondary}>
+          Annuller
+        </button>
+
+        <button type="button" onClick={saveConvertToSubscription} disabled={convertSaving} style={styles.modalBtnPrimary}>
+          {convertSaving ? "Gemmer..." : "Gem som abonnement"}
+        </button>
+      </div>
+    </div>
+  </div>
+) : null}
 
       <NavTabs />
     </div>
