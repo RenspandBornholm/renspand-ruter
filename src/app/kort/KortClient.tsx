@@ -1196,41 +1196,67 @@ if (userPosition) {
   }
 
   async function writeServiceHistory(stop: RouteStop, status: "done" | "skipped") {
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
 
-    if (userErr) throw userErr;
-    if (!user) throw new Error("Ingen bruger logget ind");
+  if (userErr) throw userErr;
+  if (!user) throw new Error("Ingen bruger logget ind");
 
-    const displayName =
-      user.user_metadata?.full_name ||
-      user.user_metadata?.name ||
-      user.email ||
-      "Ukendt bruger";
+  const displayName =
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.email ||
+    "Ukendt bruger";
 
-    const plannedBins = Array.isArray(stop.planned_bin_types)
-      ? stop.planned_bin_types.filter(Boolean)
-      : [];
+  let plannedBins = Array.isArray(stop.planned_bin_types)
+    ? stop.planned_bin_types.filter(Boolean)
+    : [];
 
-    if (plannedBins.length === 0) return;
+  // Fallback: hvis route_stops ikke har planned_bin_types,
+  // så henter vi kundens aktive spande, så historik stadig bliver gemt.
+  if (plannedBins.length === 0) {
+    const { data: activeBins, error: activeBinsErr } = await supabase
+      .from("customer_bins")
+      .select("bin_type")
+      .eq("customer_id", stop.customer_id)
+      .eq("is_active", true);
 
-    const rows = plannedBins.map((binType) => ({
-      customer_id: stop.customer_id,
-      route_stop_id: stop.id,
-      bin_type: binType,
-      status,
-      serviced_at: new Date().toISOString(),
-      note: stop.note ?? null,
-      image_path: null,
-      serviced_by_user_id: user.id,
-      serviced_by_name: displayName,
-    }));
+    if (activeBinsErr) throw activeBinsErr;
 
-    const { error: histErr } = await supabase.from("service_history").insert(rows);
-    if (histErr) throw histErr;
+    plannedBins = ((activeBins ?? []) as Array<{ bin_type: string | null }>)
+      .map((b) => b.bin_type)
+      .filter((v): v is string => !!v);
   }
+
+  if (plannedBins.length === 0) {
+    throw new Error("Kunne ikke gemme historik: Kunden har ingen planlagte eller aktive spande.");
+  }
+
+  const rows = plannedBins.map((binType) => ({
+    customer_id: stop.customer_id,
+    route_stop_id: stop.id,
+    bin_type: binType,
+    status,
+    serviced_at: new Date().toISOString(),
+    note: stop.note ?? null,
+    image_path: null,
+    serviced_by_user_id: user.id,
+    serviced_by_name: displayName,
+  }));
+
+  const { error: histErr } = await supabase.from("service_history").insert(rows);
+  if (histErr) throw histErr;
+
+  // Gem også spandene tilbage på stoppet, så ruten fremover viser korrekt hvad der blev taget.
+  if (!Array.isArray(stop.planned_bin_types) || stop.planned_bin_types.length === 0) {
+    await supabase
+      .from("route_stops")
+      .update({ planned_bin_types: plannedBins })
+      .eq("id", stop.id);
+  }
+}
 
   async function setStopNote(stopId: string) {
     const current = stops.find((s) => s.id === stopId)?.note ?? "";
