@@ -141,6 +141,11 @@ function isBinDueByFrequency(
     return candidateCleaningDateYMD >= nextAllowedYMD;
   }
 
+  const months = Math.max(1, Number(frequencyMonths ?? 1));
+  const nextAllowedYMD = addMonthsYMD(lastDoneYMD, months);
+  return candidateCleaningDateYMD >= nextAllowedYMD;
+}
+
 function getDueCleaningDatesByFrequency(
   uniqueCleaningDates: string[],
   lastDoneYMD: string | null,
@@ -152,7 +157,6 @@ function getDueCleaningDatesByFrequency(
 
   if (frequencyType === "weekly") {
     const everyNthPickup = Math.max(1, Number(frequencyWeeks ?? 1));
-
     const datesAfterLastDone = uniqueCleaningDates.filter((d) => d > lastDoneYMD);
 
     return datesAfterLastDone.filter((_, index) => {
@@ -169,10 +173,6 @@ function getDueCleaningDatesByFrequency(
       candidateDate
     )
   );
-}
-  const months = Math.max(1, Number(frequencyMonths ?? 1));
-  const nextAllowedYMD = addMonthsYMD(lastDoneYMD, months);
-  return candidateCleaningDateYMD >= nextAllowedYMD;
 }
 
 function counterBadgeStyle(count: number): React.CSSProperties {
