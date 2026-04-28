@@ -54,6 +54,17 @@ type ServiceHistoryRow = {
   serviced_at: string;
 };
 
+type HistoryItem = {
+  id: string;
+  customer_id: string;
+  bin_type: BinType;
+  status: "done" | "skipped";
+  serviced_at: string;
+  note: string | null;
+  image_path: string | null;
+  serviced_by_name: string | null;
+};
+
 type BinOpportunityInfo = {
   remainingCount: number;
   nextDate: string | null;
@@ -336,6 +347,10 @@ export default function KunderPage() {
   const [noteModalCustomer, setNoteModalCustomer] = useState<CustomerRow | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  const [historyModalCustomer, setHistoryModalCustomer] = useState<CustomerRow | null>(null);
+  const [historyRows, setHistoryRows] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCustomerType, setFilterCustomerType] = useState<"all" | CustomerType>("all");
@@ -370,6 +385,34 @@ export default function KunderPage() {
     setNoteModalCustomer(null);
     setNoteDraft("");
   }
+
+async function openHistoryModal(customer: CustomerRow) {
+  setHistoryModalCustomer(customer);
+  setHistoryRows([]);
+  setHistoryLoading(true);
+  setError(null);
+
+  try {
+    const { data, error } = await supabase
+      .from("service_history")
+      .select("id,customer_id,bin_type,status,serviced_at,note,image_path,serviced_by_name")
+      .eq("customer_id", customer.id)
+      .order("serviced_at", { ascending: false });
+
+    if (error) throw error;
+
+    setHistoryRows((data ?? []) as HistoryItem[]);
+  } catch (e: any) {
+    setError(String(e?.message ?? e));
+  } finally {
+    setHistoryLoading(false);
+  }
+}
+
+function closeHistoryModal() {
+  setHistoryModalCustomer(null);
+  setHistoryRows([]);
+}
 
   function toggleBin(bin: BinType) {
     setBinSelections((prev) => ({
@@ -1477,14 +1520,14 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
             }}
           >
             <button
-              onClick={() => router.push(`/kunder/${c.id}/historik`)}
-              style={{
-                ...styles.cardActionBtn,
-                ...(hasHistory ? styles.cardActionBtnGreen : {}),
-              }}
-            >
-              📷 Historik
-            </button>
+  onClick={() => openHistoryModal(c)}
+  style={{
+    ...styles.cardActionBtn,
+    ...(hasHistory ? styles.cardActionBtnGreen : {}),
+  }}
+>
+  📷 Historik
+</button>
 
             <button
               onClick={() => startEditCustomer(c)}
@@ -1936,7 +1979,96 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
         </div>
       </div>
 
-      {noteModalCustomer ? (
+      
+{historyModalCustomer ? (
+  <div style={styles.modalOverlay} onClick={closeHistoryModal}>
+    <div style={{ ...styles.modalCard, maxWidth: 780 }} onClick={(e) => e.stopPropagation()}>
+      <div style={styles.modalHeader}>
+        <div>
+          <div style={styles.modalTitle}>Historik</div>
+          <div style={styles.modalSubtitle}>
+            {historyModalCustomer.name} · {historyModalCustomer.address}, {historyModalCustomer.city}
+          </div>
+        </div>
+
+        <button type="button" onClick={closeHistoryModal} style={styles.modalCloseBtn}>
+          ✕
+        </button>
+      </div>
+
+      <div style={{ marginTop: 16, display: "grid", gap: 12, maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
+        {historyLoading ? (
+          <div style={{ opacity: 0.75 }}>Indlæser historik…</div>
+        ) : historyRows.length === 0 ? (
+          <div style={{ opacity: 0.75 }}>Ingen historik endnu.</div>
+        ) : (
+          historyRows.map((h) => {
+            const days = daysSince(h.serviced_at);
+            const imageUrl = getRouteNotePublicUrl(h.image_path);
+
+            return (
+              <div
+                key={h.id}
+                style={{
+                  border: "1px solid #262626",
+                  borderRadius: 16,
+                  background: "#111",
+                  padding: 12,
+                }}
+              >
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ fontSize: 18, fontWeight: 950 }}>
+                    {BIN_ICON[h.bin_type]} {BIN_LABEL[h.bin_type]}
+                  </div>
+
+                  <span
+                    style={{
+                      ...styles.pill,
+                      border: h.status === "done" ? "1px solid #2ecc71" : "1px solid #ff4d4f",
+                      background: h.status === "done" ? "rgba(46,204,113,0.08)" : "rgba(255,77,79,0.10)",
+                      color: h.status === "done" ? "#dff7e8" : "#ffd6d6",
+                    }}
+                  >
+                    {h.status === "done" ? "Rengjort" : "Ikke muligt"} d. {formatYMDFromISO(h.serviced_at)}
+                  </span>
+
+                  {days !== null ? <span style={doneBadgeStyle(days)}>for {days} dage siden</span> : null}
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>
+                  Udført af: <b>{h.serviced_by_name ?? "Ukendt"}</b>
+                </div>
+
+                {h.note ? (
+                  <div style={{ marginTop: 8, fontSize: 13, whiteSpace: "pre-wrap" }}>
+                    <b>Note:</b> {h.note}
+                  </div>
+                ) : null}
+
+                {imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt="Historik dokumentation"
+                    style={{
+                      width: "100%",
+                      maxWidth: 420,
+                      marginTop: 10,
+                      borderRadius: 12,
+                      border: "1px solid #333",
+                      display: "block",
+                    }}
+                  />
+                ) : null}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  </div>
+) : null}
+
+{noteModalCustomer ? (
         <div style={styles.modalOverlay} onClick={closeNoteModal}>
           <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
