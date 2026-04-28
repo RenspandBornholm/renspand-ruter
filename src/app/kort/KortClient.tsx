@@ -32,7 +32,7 @@ type RouteStop = {
   route_day_id: string;
   customer_id: string;
   order_index: number;
-  status: "planned" | "done" | "skipped";
+  status: "planned" | "done" | "skipped" | "postponed";
   done_at: string | null;
   note?: string | null;
   planned_bin_types?: string[] | null;
@@ -2473,32 +2473,41 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                                 </span>
 
                                 {s.status === "done" ? (
-                                  <span
-                                    style={{
-                                      display: "inline-block",
-                                      padding: "5px 10px",
-                                      borderRadius: 999,
-                                      fontSize: 12,
-                                      fontWeight: 900,
-                                      ...nextDateBadgeStyle,
-                                    }}
-                                  >
-                                    {info?.nextDate ? `Næste: ${info.nextDate}` : "Ingen ny dato endnu"}
-                                  </span>
-                                ) : info?.remainingCount ? (
-                                  <span
-                                    style={{
-                                      display: "inline-block",
-                                      padding: "5px 10px",
-                                      borderRadius: 999,
-                                      fontSize: 12,
-                                      fontWeight: 900,
-                                      ...counterBadgeStyle(info.remainingCount),
-                                    }}
-                                  >
-                                    {info.remainingCount} forsøg tilbage
-                                  </span>
-                                ) : null}
+  <span style={{
+    display: "inline-block",
+    padding: "5px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    ...nextDateBadgeStyle,
+  }}>
+    {info?.nextDate ? `Næste: ${info.nextDate}` : "Ingen ny dato endnu"}
+  </span>
+) : s.status === "postponed" ? (
+  <span style={{
+    display: "inline-block",
+    padding: "5px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    border: "1px solid #f1c40f",
+    background: "rgba(241,196,15,0.12)",
+    color: "#fff0b3",
+  }}>
+    SPRUNGET OVER
+  </span>
+) : info?.remainingCount ? (
+  <span style={{
+    display: "inline-block",
+    padding: "5px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    ...counterBadgeStyle(info.remainingCount),
+  }}>
+    {info.remainingCount} forsøg tilbage
+  </span>
+) : null}
                               </div>
                             );
                           })}
@@ -2554,7 +2563,29 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                           Rengjort
                         </button>
 
-                        <button
+                       <button
+  onClick={async () => {
+    try {
+      await updateStop(s.id, { status: "postponed", done_at: null });
+      await refreshBinOpportunityForCurrentStops();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    }
+  }}
+  style={{
+    padding: "8px 14px",
+    borderRadius: 12,
+    border: "1px solid #f1c40f",
+    background: "rgba(241,196,15,0.12)",
+    color: "#fff0b3",
+    cursor: "pointer",
+    fontWeight: 900,
+  }}
+>
+  Spring over
+</button>
+
+                          <button
                           onClick={async () => {
                             try {
                               await updateStop(s.id, { status: "skipped", done_at: null });
