@@ -492,6 +492,7 @@ export default function KortPage() {
   const [planMessage, setPlanMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [showMobileMap, setShowMobileMap] = useState(false);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900);
@@ -2610,6 +2611,41 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
   Spring over
 </button>
 
+
+<button
+  type="button"
+  onClick={async () => {
+    try {
+      setError(null);
+
+      await updateStop(s.id, { status: "postponed", done_at: null });
+
+      setStops((prev) =>
+        prev.map((stop) =>
+          stop.id === s.id
+            ? { ...stop, status: "postponed", done_at: null }
+            : stop
+        )
+      );
+
+      await refreshBinOpportunityForCurrentStops();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    }
+  }}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #f1c40f",
+    background: s.status === "postponed" ? "#3a2f00" : "#101010",
+    color: "#fff0b3",
+    cursor: "pointer",
+    fontWeight: 900,
+  }}
+>
+  Spring over
+</button>
+
                           <button
                           onClick={async () => {
                             try {
@@ -2673,24 +2709,78 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
         </div>
 
         <div
+  style={{
+    order: isMobile ? 1 : 2,
+    background: "#0d0d0d",
+    border: "1px solid #222",
+    borderRadius: 18,
+    padding: 14,
+  }}
+>
+  {isMobile ? (
+    <div
+      style={{
+        border: "1px solid #2a2a2a",
+        borderRadius: 16,
+        overflow: "hidden",
+        background: "#0b0b0b",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setShowMobileMap((prev) => !prev)}
+        style={{
+          width: "100%",
+          padding: "13px 14px",
+          border: "none",
+          background: "#111",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          cursor: "pointer",
+          fontWeight: 900,
+          fontSize: 15,
+        }}
+      >
+        <span>🗺️ Kort</span>
+        <span style={{ color: "#bdbdbd", fontSize: 13 }}>
+          {showMobileMap ? "Skjul ▲" : "Vis ▼"}
+        </span>
+      </button>
+
+      <div
+        style={{
+          display: showMobileMap ? "block" : "none",
+          padding: 10,
+          borderTop: "1px solid #222",
+        }}
+      >
+        <div
+          ref={mapDivRef}
           style={{
-            order: isMobile ? 1 : 2,
-            background: "#0d0d0d",
-            border: "1px solid #222",
-            borderRadius: 18,
-            padding: 14,
+            height: 430,
+            width: "100%",
+            borderRadius: 14,
+            overflow: "hidden",
+            background: "#111",
           }}
-        >
-          <div
-            ref={mapDivRef}
-            style={{
-              height: isMobile ? 520 : 620,
-              width: "100%",
-              borderRadius: 16,
-              overflow: "hidden",
-              background: "#111",
-            }}
-          />
+        />
+      </div>
+    </div>
+  ) : (
+    <div
+      ref={mapDivRef}
+      style={{
+        height: 620,
+        width: "100%",
+        borderRadius: 16,
+        overflow: "hidden",
+        background: "#111",
+      }}
+    />
+  )}
 
           {isMobile ? (
             <div
@@ -2707,7 +2797,14 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
 
               {sortedStops.map((s, i) => {
                 const c = s.customer;
-                const statusColor = s.status === "done" ? "#2ecc71" : s.status === "skipped" ? "#ff4d4f" : "#999";
+                const statusColor =
+  s.status === "done"
+    ? "#2ecc71"
+    : s.status === "skipped"
+    ? "#ff4d4f"
+    : s.status === "postponed"
+    ? "#f1c40f"
+    : "#999";
                 const todays =
                   Array.isArray(s.planned_bin_types) && s.planned_bin_types.length > 0
                     ? s.planned_bin_types
@@ -2721,7 +2818,13 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                           {i + 1}. {c?.name ?? "(ukendt)"}
                         </div>
                         <div style={{ marginTop: 4, fontSize: 12, color: statusColor, fontWeight: 900 }}>
-                          {s.status === "planned" ? "PLANLAGT" : s.status === "done" ? "RENGJORT" : "IKKE MULIGT"}
+                          {s.status === "planned"
+  ? "PLANLAGT"
+  : s.status === "done"
+  ? "RENGJORT"
+  : s.status === "postponed"
+  ? "SPRINGET OVER"
+  : "IKKE MULIGT"}
                         </div>
                       </div>
 
