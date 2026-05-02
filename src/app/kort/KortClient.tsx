@@ -3017,6 +3017,41 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                         Rengjort
                       </button>
 
+
+<button
+  type="button"
+  onClick={async () => {
+    try {
+      setError(null);
+
+      await updateStop(s.id, { status: "postponed", done_at: null });
+
+      setStops((prev) =>
+        prev.map((stop) =>
+          stop.id === s.id
+            ? { ...stop, status: "postponed", done_at: null }
+            : stop
+        )
+      );
+
+      await refreshBinOpportunityForCurrentStops();
+    } catch (e: any) {
+      setError(String(e?.message ?? e));
+    }
+  }}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #f1c40f",
+    background: s.status === "postponed" ? "#3a2f00" : "#101010",
+    color: "#fff0b3",
+    cursor: "pointer",
+    fontWeight: 900,
+  }}
+>
+  Spring over
+</button>
+
                       <button
                         onClick={async () => {
                           try {
