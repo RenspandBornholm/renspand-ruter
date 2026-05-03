@@ -1280,8 +1280,7 @@ if (userPosition) {
     const { data: activeBins, error: activeBinsErr } = await supabase
       .from("customer_bins")
       .select("bin_type")
-      .eq("customer_id", stop.customer_id)
-      .eq("is_active", true);
+      .eq("customer_id", stop.customer_id);
 
     if (activeBinsErr) throw activeBinsErr;
 
@@ -2556,9 +2555,9 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                               const doneAt = new Date().toISOString();
                               const updatedStop: RouteStop = { ...s, status: "done", done_at: doneAt };
 
-                              await updateStop(s.id, { status: "done", done_at: doneAt });
-                              await deactivateSingleCustomerPlannedBins(updatedStop);
                               await writeServiceHistory(updatedStop, "done");
+await updateStop(s.id, { status: "done", done_at: doneAt });
+await deactivateSingleCustomerPlannedBins(updatedStop);
                               await refreshBinOpportunityForCurrentStops();
                             } catch (e: any) {
                               setError(String(e?.message ?? e));
@@ -2996,9 +2995,9 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
                             const doneAt = new Date().toISOString();
                             const updatedStop: RouteStop = { ...s, status: "done", done_at: doneAt };
 
-                            await updateStop(s.id, { status: "done", done_at: doneAt });
-                            await deactivateSingleCustomerPlannedBins(updatedStop);
                             await writeServiceHistory(updatedStop, "done");
+await updateStop(s.id, { status: "done", done_at: doneAt });
+await deactivateSingleCustomerPlannedBins(updatedStop);
                             await refreshBinOpportunityForCurrentStops();
                           } catch (e: any) {
                             setError(String(e?.message ?? e));
