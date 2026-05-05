@@ -1323,6 +1323,84 @@ if (plannedBins.length === 0) {
   }
 }
 
+async function addExtraBinToStop(stop: RouteStop) {
+  const options = [
+    { value: "madaffald", label: "Madaffald" },
+    { value: "rest_plast", label: "Rest + plast" },
+    { value: "pap_papir", label: "Papir/pap" },
+    { value: "metal_glas", label: "Metal/glas" },
+  ];
+
+  const choice = prompt(
+    "Hvilken spand skal tilføjes?\n\n1 = Madaffald\n2 = Rest + plast\n3 = Papir/pap\n4 = Metal/glas"
+  );
+
+  if (!choice) return;
+
+  const selected = options[Number(choice) - 1];
+  if (!selected) {
+    alert("Ugyldigt valg.");
+    return;
+  }
+
+  const currentBins = Array.isArray(stop.planned_bin_types)
+    ? stop.planned_bin_types.filter(Boolean)
+    : [];
+
+  if (currentBins.includes(selected.value)) {
+    alert(`${selected.label} er allerede på stoppet.`);
+    return;
+  }
+
+  const nextBins = [...currentBins, selected.value];
+
+  const { error } = await supabase
+    .from("route_stops")
+    .update({ planned_bin_types: nextBins })
+    .eq("id", stop.id);
+
+  if (error) throw error;
+
+  setStops((prev) =>
+    prev.map((s) =>
+      s.id === stop.id ? { ...s, planned_bin_types: nextBins } : s
+    )
+  );
+
+  // Hvis stoppet allerede er markeret rengjort, så gem ekstra spand i historik med det samme
+  if (stop.status === "done") {
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+
+    if (userErr) throw userErr;
+    if (!user) throw new Error("Ingen bruger logget ind");
+
+    const displayName =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email ||
+      "Ukendt bruger";
+
+    const { error: histErr } = await supabase.from("service_history").insert({
+      customer_id: stop.customer_id,
+      route_stop_id: stop.id,
+      bin_type: selected.value,
+      status: "done",
+      serviced_at: new Date().toISOString(),
+      note: stop.note ?? null,
+      image_path: null,
+      serviced_by_user_id: user.id,
+      serviced_by_name: displayName,
+    });
+
+    if (histErr) throw histErr;
+  }
+
+  await refreshBinOpportunityForCurrentStops();
+}
+
   async function setStopNote(stopId: string) {
     const current = stops.find((s) => s.id === stopId)?.note ?? "";
     const txt = prompt("Skriv note til dette stop:", current);
@@ -2582,6 +2660,21 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                           Rengjort
                         </button>
 
+<button
+  onClick={() => addExtraBinToStop(s).catch((e) => setError(String(e?.message ?? e)))}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #4ea1ff",
+    background: "#101010",
+    color: "#dbeeff",
+    cursor: "pointer",
+    fontWeight: 900,
+  }}
+>
+  + Tilføj spand
+</button>
+
                        <button
   type="button"
   onClick={async () => {
@@ -2617,39 +2710,6 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
 </button>
 
 
-<button
-  type="button"
-  onClick={async () => {
-    try {
-      setError(null);
-
-      await updateStop(s.id, { status: "postponed", done_at: null });
-
-      setStops((prev) =>
-        prev.map((stop) =>
-          stop.id === s.id
-            ? { ...stop, status: "postponed", done_at: null }
-            : stop
-        )
-      );
-
-      await refreshBinOpportunityForCurrentStops();
-    } catch (e: any) {
-      setError(String(e?.message ?? e));
-    }
-  }}
-  style={{
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #f1c40f",
-    background: s.status === "postponed" ? "#3a2f00" : "#101010",
-    color: "#fff0b3",
-    cursor: "pointer",
-    fontWeight: 900,
-  }}
->
-  Spring over
-</button>
 
                           <button
                           onClick={async () => {
@@ -3021,7 +3081,20 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                       >
                         Rengjort
                       </button>
-
+<button
+  onClick={() => addExtraBinToStop(s).catch((e) => setError(String(e?.message ?? e)))}
+  style={{
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #4ea1ff",
+    background: "#101010",
+    color: "#dbeeff",
+    cursor: "pointer",
+    fontWeight: 900,
+  }}
+>
+  + Tilføj spand
+</button>
 
 <button
   type="button"
