@@ -1270,28 +1270,34 @@ if (userPosition) {
     user.email ||
     "Ukendt bruger";
 
-  let plannedBins = Array.isArray(stop.planned_bin_types)
-    ? stop.planned_bin_types.filter(Boolean)
-    : [];
+  const allowedBinTypes = ["madaffald", "rest_plast", "pap_papir", "metal_glas"];
 
-  // Fallback: hvis route_stops ikke har planned_bin_types,
-  // så henter vi kundens aktive spande, så historik stadig bliver gemt.
-  if (plannedBins.length === 0) {
-    const { data: activeBins, error: activeBinsErr } = await supabase
-      .from("customer_bins")
-      .select("bin_type")
-      .eq("customer_id", stop.customer_id);
+let plannedBins = Array.isArray(stop.planned_bin_types)
+  ? stop.planned_bin_types.filter(Boolean)
+  : [];
 
-    if (activeBinsErr) throw activeBinsErr;
+// Filtrer altid ugyldige spandetyper væk
+plannedBins = plannedBins.filter((v) => allowedBinTypes.includes(v));
 
-    plannedBins = ((activeBins ?? []) as Array<{ bin_type: string | null }>)
-      .map((b) => b.bin_type)
-      .filter((v): v is string => !!v);
-  }
+// Fallback: hvis route_stops ikke har gyldige planned_bin_types,
+// så henter vi kundens spande.
+if (plannedBins.length === 0) {
+  const { data: activeBins, error: activeBinsErr } = await supabase
+    .from("customer_bins")
+    .select("bin_type")
+    .eq("customer_id", stop.customer_id);
 
-  if (plannedBins.length === 0) {
-    throw new Error("Kunne ikke gemme historik: Kunden har ingen planlagte eller aktive spande.");
-  }
+  if (activeBinsErr) throw activeBinsErr;
+
+  plannedBins = ((activeBins ?? []) as Array<{ bin_type: string | null }>)
+    .map((b) => b.bin_type)
+    .filter((v): v is string => !!v)
+    .filter((v) => allowedBinTypes.includes(v));
+}
+
+if (plannedBins.length === 0) {
+  throw new Error("Kunne ikke gemme historik: Kunden har ingen gyldige spande.");
+}
 
   const rows = plannedBins.map((binType) => ({
     customer_id: stop.customer_id,
