@@ -493,6 +493,7 @@ export default function KortPage() {
   const [error, setError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileMap, setShowMobileMap] = useState(false);
+  const [extraBinMenuStopId, setExtraBinMenuStopId] = useState<string | null>(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900);
@@ -1323,36 +1324,17 @@ if (plannedBins.length === 0) {
   }
 }
 
-async function addExtraBinToStop(stop: RouteStop) {
-  const options = [
-    { value: "madaffald", label: "Madaffald" },
-    { value: "rest_plast", label: "Rest + plast" },
-    { value: "pap_papir", label: "Papir/pap" },
-    { value: "metal_glas", label: "Metal/glas" },
-  ];
-
-  const choice = prompt(
-    "Hvilken spand skal tilføjes?\n\n1 = Madaffald\n2 = Rest + plast\n3 = Papir/pap\n4 = Metal/glas"
-  );
-
-  if (!choice) return;
-
-  const selected = options[Number(choice) - 1];
-  if (!selected) {
-    alert("Ugyldigt valg.");
-    return;
-  }
-
+async function addExtraBinToStop(stop: RouteStop, binType: string) {
   const currentBins = Array.isArray(stop.planned_bin_types)
     ? stop.planned_bin_types.filter(Boolean)
     : [];
 
-  if (currentBins.includes(selected.value)) {
-    alert(`${selected.label} er allerede på stoppet.`);
+  if (currentBins.includes(binType)) {
+    setExtraBinMenuStopId(null);
     return;
   }
 
-  const nextBins = [...currentBins, selected.value];
+  const nextBins = [...currentBins, binType];
 
   const { error } = await supabase
     .from("route_stops")
@@ -1367,38 +1349,69 @@ async function addExtraBinToStop(stop: RouteStop) {
     )
   );
 
-  // Hvis stoppet allerede er markeret rengjort, så gem ekstra spand i historik med det samme
   if (stop.status === "done") {
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-
-    if (userErr) throw userErr;
-    if (!user) throw new Error("Ingen bruger logget ind");
-
-    const displayName =
-      user.user_metadata?.full_name ||
-      user.user_metadata?.name ||
-      user.email ||
-      "Ukendt bruger";
-
-    const { error: histErr } = await supabase.from("service_history").insert({
-      customer_id: stop.customer_id,
-      route_stop_id: stop.id,
-      bin_type: selected.value,
-      status: "done",
-      serviced_at: new Date().toISOString(),
-      note: stop.note ?? null,
-      image_path: null,
-      serviced_by_user_id: user.id,
-      serviced_by_name: displayName,
-    });
-
-    if (histErr) throw histErr;
+    await writeServiceHistory({ ...stop, planned_bin_types: [binType] }, "done");
   }
 
+  setExtraBinMenuStopId(null);
   await refreshBinOpportunityForCurrentStops();
+}
+
+function ExtraBinMenu({ stop }: { stop: RouteStop }) {
+  const options = [
+    { value: "madaffald", label: "Mad", icon: "🍎" },
+    { value: "rest_plast", label: "Rest", icon: "🗑️" },
+    { value: "pap_papir", label: "Papir/pap", icon: "📦" },
+  ];
+
+  const currentBins = Array.isArray(stop.planned_bin_types)
+    ? stop.planned_bin_types.filter(Boolean)
+    : [];
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: 10,
+        borderRadius: 14,
+        border: "1px solid #333",
+        background: "#111",
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr",
+        gap: 8,
+      }}
+    >
+      {options.map((opt) => {
+        const alreadyAdded = currentBins.includes(opt.value);
+
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            disabled={alreadyAdded}
+            onClick={() =>
+              addExtraBinToStop(stop, opt.value).catch((e) =>
+                setError(String(e?.message ?? e))
+              )
+            }
+            style={{
+              padding: "10px 8px",
+              borderRadius: 12,
+              border: alreadyAdded ? "1px solid #2ecc71" : "1px solid #4ea1ff",
+              background: alreadyAdded ? "rgba(46,204,113,0.12)" : "#101010",
+              color: alreadyAdded ? "#dff7e8" : "#dbeeff",
+              cursor: alreadyAdded ? "not-allowed" : "pointer",
+              fontWeight: 900,
+              fontSize: 12,
+            }}
+          >
+            <div style={{ fontSize: 22 }}>{opt.icon}</div>
+            <div>{alreadyAdded ? "Tilføjet" : opt.label}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
   async function setStopNote(stopId: string) {
@@ -2661,12 +2674,15 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                         </button>
 
 <button
-  onClick={() => addExtraBinToStop(s).catch((e) => setError(String(e?.message ?? e)))}
+  type="button"
+  onClick={() =>
+    setExtraBinMenuStopId((prev) => (prev === s.id ? null : s.id))
+  }
   style={{
     padding: "10px 12px",
     borderRadius: 12,
     border: "1px solid #4ea1ff",
-    background: "#101010",
+    background: extraBinMenuStopId === s.id ? "#0b2440" : "#101010",
     color: "#dbeeff",
     cursor: "pointer",
     fontWeight: 900,
@@ -2765,6 +2781,9 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                           Fjern
                         </button>
                       </div>
+{extraBinMenuStopId === s.id ? (
+  <ExtraBinMenu stop={s} />
+) : null}
                     </div>
                   );
                 })}
@@ -3082,12 +3101,15 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                         Rengjort
                       </button>
 <button
-  onClick={() => addExtraBinToStop(s).catch((e) => setError(String(e?.message ?? e)))}
+  type="button"
+  onClick={() =>
+    setExtraBinMenuStopId((prev) => (prev === s.id ? null : s.id))
+  }
   style={{
     padding: "10px 12px",
     borderRadius: 12,
     border: "1px solid #4ea1ff",
-    background: "#101010",
+    background: extraBinMenuStopId === s.id ? "#0b2440" : "#101010",
     color: "#dbeeff",
     cursor: "pointer",
     fontWeight: 900,
@@ -3184,6 +3206,9 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                         Fjern stop
                       </button>
                     </div>
+{extraBinMenuStopId === s.id ? (
+  <ExtraBinMenu stop={s} />
+) : null}
                   </div>
                 );
               })}
