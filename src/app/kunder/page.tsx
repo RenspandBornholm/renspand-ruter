@@ -8,7 +8,7 @@ import AppHeader from "@/app/components/AppHeader";
 
 type ServiceType = "single" | "subscription";
 type CustomerType = "private" | "business";
-type BinType = "madaffald" | "rest_plast" | "pap_metal";
+type BinType = "madaffald" | "rest_plast" | "pap_papir" | "metal_glas";
 type MonthFreq = 1 | 2 | 3 | 6;
 type WeekFreq = 1 | 2 | 3;
 type FrequencyType = "weekly" | "monthly";
@@ -113,13 +113,15 @@ type BinSelectionState = Record<
 const BIN_LABEL: Record<BinType, string> = {
   madaffald: "Madaffald",
   rest_plast: "Rest + plast",
-  pap_metal: "Papir/pap + metal/glas",
+  pap_papir: "Papir/pap",
+  metal_glas: "Metal/glas",
 };
 
 const BIN_ICON: Record<BinType, string> = {
   madaffald: "🍎",
   rest_plast: "🗑️",
-  pap_metal: "♻️",
+  pap_papir: "📦",
+  metal_glas: "🍾",
 };
 
 const FREQS: MonthFreq[] = [1, 2, 3, 6];
@@ -142,7 +144,14 @@ function getInitialBinState(): BinSelectionState {
       frequency_months: 1,
       frequency_weeks: 1,
     },
-    pap_metal: {
+    pap_papir: {
+      selected: false,
+      quantity: 1,
+      frequency_type: "monthly",
+      frequency_months: 1,
+      frequency_weeks: 1,
+    },
+    metal_glas: {
       selected: false,
       quantity: 1,
       frequency_type: "monthly",
@@ -367,6 +376,11 @@ export default function KunderPage() {
   const [historyModalCustomer, setHistoryModalCustomer] = useState<CustomerRow | null>(null);
   const [historyRows, setHistoryRows] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyEditMode, setHistoryEditMode] = useState(false);
+  const [historySaving, setHistorySaving] = useState(false);
+  const [newHistoryBinType, setNewHistoryBinType] = useState<BinType>("madaffald");
+  const [newHistoryStatus, setNewHistoryStatus] = useState<"done" | "skipped">("done");
+  const [newHistoryDate, setNewHistoryDate] = useState(toYMD(new Date()));
 
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -429,6 +443,92 @@ async function openHistoryModal(customer: CustomerRow) {
 function closeHistoryModal() {
   setHistoryModalCustomer(null);
   setHistoryRows([]);
+  setHistoryEditMode(false);
+  setHistorySaving(false);
+  setNewHistoryBinType("madaffald");
+  setNewHistoryStatus("done");
+  setNewHistoryDate(toYMD(new Date()));
+}
+
+async function reloadHistory(customerId: string) {
+  const { data, error } = await supabase
+    .from("service_history")
+    .select("id,customer_id,bin_type,status,serviced_at,note,image_path,serviced_by_name")
+    .eq("customer_id", customerId)
+    .order("serviced_at", { ascending: false });
+
+  if (error) throw error;
+
+  setHistoryRows((data ?? []) as HistoryItem[]);
+}
+
+async function deleteHistoryItem(historyId: string) {
+  if (!historyModalCustomer) return;
+
+  const ok = confirm("Slet denne historik-linje?");
+  if (!ok) return;
+
+  setError(null);
+  setHistorySaving(true);
+
+  try {
+    const { error } = await supabase
+      .from("service_history")
+      .delete()
+      .eq("id", historyId);
+
+    if (error) throw error;
+
+    await reloadHistory(historyModalCustomer.id);
+    await loadCustomers();
+  } catch (e: any) {
+    setError(String(e?.message ?? e));
+  } finally {
+    setHistorySaving(false);
+  }
+}
+
+async function addHistoryItem() {
+  if (!historyModalCustomer) return;
+
+  setError(null);
+  setHistorySaving(true);
+
+  try {
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+
+    if (userErr) throw userErr;
+
+    const displayName =
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      user?.email ||
+      "Manuelt tilføjet";
+
+    const servicedAt = new Date(`${newHistoryDate}T12:00:00`).toISOString();
+
+    const { error } = await supabase.from("service_history").insert({
+      customer_id: historyModalCustomer.id,
+      bin_type: newHistoryBinType,
+      status: newHistoryStatus,
+      serviced_at: servicedAt,
+      note: "Manuelt tilføjet fra kundehistorik",
+      image_path: null,
+      serviced_by_name: displayName,
+    });
+
+    if (error) throw error;
+
+    await reloadHistory(historyModalCustomer.id);
+    await loadCustomers();
+  } catch (e: any) {
+    setError(String(e?.message ?? e));
+  } finally {
+    setHistorySaving(false);
+  }
 }
 
   function toggleBin(bin: BinType) {
@@ -906,7 +1006,7 @@ function updateBinWeekFrequency(bin: BinType, freq: WeekFreq) {
       const { error: binsErr } = await supabase.from("customer_bins").insert(binRows);
 
       if (binsErr) {
-        setError(`${binsErr.message}\n\nTip: Tilladte bin_type værdier skal nu være: madaffald, rest_plast, pap_metal.`);
+        setError(`${binsErr.message}\n\nTip: Tilladte bin_type værdier skal være: madaffald, rest_plast, pap_papir, metal_glas.`);
         return;
       }
 
@@ -2187,7 +2287,72 @@ function renderCustomerCard(c: CustomerRow) {
         </button>
       </div>
 
-      <div style={{ marginTop: 16, display: "grid", gap: 12, maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
+      <button
+  type="button"
+  onClick={() => setHistoryEditMode((prev) => !prev)}
+  style={{
+    ...styles.modalBtnPrimary,
+    padding: "9px 12px",
+  }}
+>
+  {historyEditMode ? "Luk redigering" : "Rediger"}
+</button>
+
+{historyEditMode ? (
+  <div
+    style={{
+      marginTop: 16,
+      padding: 12,
+      borderRadius: 16,
+      border: "1px solid #333",
+      background: "#111",
+      display: "grid",
+      gap: 10,
+    }}
+  >
+    <div style={{ fontWeight: 900 }}>Tilføj historik</div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+      <select
+        value={newHistoryBinType}
+        onChange={(e) => setNewHistoryBinType(e.target.value as BinType)}
+        style={styles.select}
+      >
+        {(Object.keys(BIN_LABEL) as BinType[]).map((bin) => (
+          <option key={bin} value={bin}>
+            {BIN_LABEL[bin]}
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={newHistoryStatus}
+        onChange={(e) => setNewHistoryStatus(e.target.value as "done" | "skipped")}
+        style={styles.select}
+      >
+        <option value="done">Rengjort</option>
+        <option value="skipped">Ikke muligt</option>
+      </select>
+
+      <input
+        type="date"
+        value={newHistoryDate}
+        onChange={(e) => setNewHistoryDate(e.target.value)}
+        style={styles.input}
+      />
+    </div>
+
+    <button
+      type="button"
+      onClick={addHistoryItem}
+      disabled={historySaving}
+      style={styles.modalBtnPrimary}
+    >
+      {historySaving ? "Gemmer..." : "+ Tilføj historik"}
+    </button>
+  </div>
+) : null}      
+<div style={{ marginTop: 16, display: "grid", gap: 12, maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
         {historyLoading ? (
           <div style={{ opacity: 0.75 }}>Indlæser historik…</div>
         ) : historyRows.length === 0 ? (
@@ -2236,7 +2401,27 @@ function renderCustomerCard(c: CustomerRow) {
                   </div>
                 ) : null}
 
-                {imageUrl ? (
+{historyEditMode ? (
+  <button
+    type="button"
+    onClick={() => deleteHistoryItem(h.id)}
+    disabled={historySaving}
+    style={{
+      marginTop: 10,
+      padding: "8px 10px",
+      borderRadius: 12,
+      border: "1px solid #ff4d4f",
+      background: "rgba(255,77,79,0.10)",
+      color: "#ffd6d6",
+      cursor: "pointer",
+      fontWeight: 900,
+    }}
+  >
+    Slet denne linje
+  </button>
+) : null}
+                
+{imageUrl ? (
                   <img
                     src={imageUrl}
                     alt="Historik dokumentation"
