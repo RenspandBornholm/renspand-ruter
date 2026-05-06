@@ -1277,53 +1277,27 @@ let plannedBins = Array.isArray(stop.planned_bin_types)
   ? stop.planned_bin_types.filter(Boolean)
   : [];
 
-// Filtrer altid ugyldige spandetyper væk
 plannedBins = plannedBins.filter((v) => allowedBinTypes.includes(v));
 
-// Fallback: hvis route_stops ikke har gyldige planned_bin_types,
-// så henter vi kundens spande.
 if (plannedBins.length === 0) {
-  const { data: activeBins, error: activeBinsErr } = await supabase
-    .from("customer_bins")
-    .select("bin_type")
-    .eq("customer_id", stop.customer_id);
-
-  if (activeBinsErr) throw activeBinsErr;
-
-  plannedBins = ((activeBins ?? []) as Array<{ bin_type: string | null }>)
-    .map((b) => b.bin_type)
-    .filter((v): v is string => !!v)
-    .filter((v) => allowedBinTypes.includes(v));
+  throw new Error("Kunne ikke gemme historik: Dette stop har ingen planlagte spande.");
 }
 
-if (plannedBins.length === 0) {
-  throw new Error("Kunne ikke gemme historik: Kunden har ingen gyldige spande.");
+const rows = plannedBins.map((binType) => ({
+  customer_id: stop.customer_id,
+  route_stop_id: stop.id,
+  bin_type: binType,
+  status,
+  serviced_at: new Date().toISOString(),
+  note: stop.note ?? null,
+  image_path: null,
+  serviced_by_user_id: user.id,
+  serviced_by_name: displayName,
+}));
+
+const { error: histErr } = await supabase.from("service_history").insert(rows);
+if (histErr) throw histErr;
 }
-
-  const rows = plannedBins.map((binType) => ({
-    customer_id: stop.customer_id,
-    route_stop_id: stop.id,
-    bin_type: binType,
-    status,
-    serviced_at: new Date().toISOString(),
-    note: stop.note ?? null,
-    image_path: null,
-    serviced_by_user_id: user.id,
-    serviced_by_name: displayName,
-  }));
-
-  const { error: histErr } = await supabase.from("service_history").insert(rows);
-  if (histErr) throw histErr;
-
-  // Gem også spandene tilbage på stoppet, så ruten fremover viser korrekt hvad der blev taget.
-  if (!Array.isArray(stop.planned_bin_types) || stop.planned_bin_types.length === 0) {
-    await supabase
-      .from("route_stops")
-      .update({ planned_bin_types: plannedBins })
-      .eq("id", stop.id);
-  }
-}
-
 async function addExtraBinToStop(stop: RouteStop, binType: string) {
   const currentBins = Array.isArray(stop.planned_bin_types)
     ? stop.planned_bin_types.filter(Boolean)
