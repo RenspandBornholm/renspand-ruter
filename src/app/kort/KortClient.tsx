@@ -1295,8 +1295,24 @@ const rows = plannedBins.map((binType) => ({
   serviced_by_name: displayName,
 }));
 
-const { error: histErr } = await supabase.from("service_history").insert(rows);
-if (histErr) throw histErr;
+for (const row of rows) {
+  const { data: existing, error: checkErr } = await supabase
+    .from("service_history")
+    .select("id")
+    .eq("route_stop_id", row.route_stop_id)
+    .eq("bin_type", row.bin_type)
+    .eq("status", row.status)
+    .maybeSingle();
+
+  if (checkErr) throw checkErr;
+
+  if (!existing) {
+    const { error: histErr } = await supabase
+      .from("service_history")
+      .insert(row);
+
+    if (histErr) throw histErr;
+  }
 }
 async function addExtraBinToStop(stop: RouteStop, binType: string) {
   const currentBins = Array.isArray(stop.planned_bin_types)
@@ -1333,10 +1349,11 @@ async function addExtraBinToStop(stop: RouteStop, binType: string) {
 
 function ExtraBinMenu({ stop }: { stop: RouteStop }) {
   const options = [
-    { value: "madaffald", label: "Mad", icon: "🍎" },
-    { value: "rest_plast", label: "Rest", icon: "🗑️" },
-    { value: "pap_papir", label: "Papir/pap", icon: "📦" },
-  ];
+  { value: "madaffald", label: "Mad", icon: "🍎" },
+  { value: "rest_plast", label: "Rest", icon: "🗑️" },
+  { value: "pap_papir", label: "Papir/pap", icon: "📦" },
+  { value: "metal_glas", label: "Metal/glas", icon: "🍾" },
+];
 
   const currentBins = Array.isArray(stop.planned_bin_types)
     ? stop.planned_bin_types.filter(Boolean)
@@ -1351,7 +1368,7 @@ function ExtraBinMenu({ stop }: { stop: RouteStop }) {
         border: "1px solid #333",
         background: "#111",
         display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr",
+        gridTemplateColumns: "1fr 1fr",
         gap: 8,
       }}
     >
