@@ -671,32 +671,35 @@ useEffect(() => {
     return created as RouteDay;
   }
 
-  async function loadStops(routeDayId: string) {
-    const { data, error } = await supabase
-      .from("route_stops")
-      .select("id,route_day_id,customer_id,order_index,status,done_at,note,planned_bin_types")
-      .eq("route_day_id", routeDayId)
-      .order("order_index", { ascending: true });
+  async function loadStopsData(routeDayId: string) {
+  const { data, error } = await supabase
+    .from("route_stops")
+    .select("id,route_day_id,customer_id,order_index,status,done_at,note,planned_bin_types")
+    .eq("route_day_id", routeDayId)
+    .order("order_index", { ascending: true });
 
-    if (error) throw error;
+  if (error) throw error;
 
-    const rows = (data ?? []) as RouteStop[];
-    const customerMap = new Map(allCustomers.map((c) => [c.id, c]));
+  const rows = (data ?? []) as RouteStop[];
+  const customerMap = new Map(allCustomers.map((c) => [c.id, c]));
 
-    const withCustomers = rows
-      .map((r) => ({
-        ...r,
-        planned_bin_types: Array.isArray(r.planned_bin_types) ? r.planned_bin_types : [],
-        customer: customerMap.get(r.customer_id),
-      }))
-      .sort((a, b) => a.order_index - b.order_index)
-      .map((r, idx) => ({
-        ...r,
-        order_index: idx,
-      }));
+  return rows
+    .map((r) => ({
+      ...r,
+      planned_bin_types: Array.isArray(r.planned_bin_types) ? r.planned_bin_types : [],
+      customer: customerMap.get(r.customer_id),
+    }))
+    .sort((a, b) => a.order_index - b.order_index)
+    .map((r, idx) => ({
+      ...r,
+      order_index: idx,
+    }));
+}
 
-    setStops(withCustomers);
-  }
+async function loadStops(routeDayId: string) {
+  const withCustomers = await loadStopsData(routeDayId);
+  setStops(withCustomers);
+}
 
   async function loadUpcomingRoutes(baseDateYMD: string) {
     const dates = Array.from({ length: 7 }, (_, i) => addDaysYMD(baseDateYMD, i));
@@ -1229,6 +1232,22 @@ if (userPosition) {
     await loadUpcomingRoutes(upcomingBaseDate);
   }
 
+async function resetStop(stop: RouteStop) {
+  const ok = confirm("Nulstil dette stop? Historik fra dette stop bliver også fjernet.");
+  if (!ok) return;
+
+  const { error: histErr } = await supabase
+    .from("service_history")
+    .delete()
+    .eq("route_stop_id", stop.id);
+
+  if (histErr) throw histErr;
+
+  await updateStop(stop.id, { status: "planned", done_at: null });
+
+  await refreshBinOpportunityForCurrentStops();
+}
+
   async function deactivateSingleCustomerPlannedBins(stop: RouteStop) {
     const { data: customer, error: customerError } = await supabase
       .from("customers")
@@ -1751,20 +1770,20 @@ function ExtraBinMenu({ stop }: { stop: RouteStop }) {
     return pickBestDirection(bestRoute, hq);
   }
 
-  async function optimizeRoute() {
+  async function optimizeRoute(stopsOverride?: RouteStop[]) {
     try {
       setError(null);
       setOptimizing(true);
+      const routeStops = stopsOverride ?? stops;
 
-      if (stops.length < 2) return;
+      if (routeStops.length < 2) return;
 
       const HQ = userPosition ?? {
       lat: 55.10692093390334,
       lng: 14.822756898314669,
   };
 
-      const sortedStops = [...stops].sort((a, b) => a.order_index - b.order_index);
-
+      const sortedStops = [...routeStops].sort((a, b) => a.order_index - b.order_index);
       const lockedStops = sortedStops.filter((s) => s.status !== "planned");
       const plannedStops = sortedStops.filter((s) => s.status === "planned");
 
@@ -1994,35 +2013,41 @@ for (const row of (activeBinsRows ?? []) as ActiveBinConfigRow[]) {
   }
 
   async function planDay() {
-    try {
-      setError(null);
+  try {
+    setError(null);
+    setPlanMessage(null);
+    setAdding(true);
+
+    const rd = routeDay ?? (await loadOrCreateRouteDay(routeDate));
+    const beforeCount = stops.length;
+
+    await suggestCustomersForDate();
+
+    const freshStops = await loadStopsData(rd.id);
+    setStops(freshStops);
+
+    await optimizeRoute(freshStops);
+
+    const finalStops = await loadStopsData(rd.id);
+    setStops(finalStops);
+
+    const added = Math.max(0, finalStops.length - beforeCount);
+
+    setPlanMessage(
+      added > 0
+        ? `Rute planlagt • ${added} stop tilføjet • rute optimeret`
+        : "Rute planlagt • ingen nye stop • rute optimeret"
+    );
+
+    setTimeout(() => {
       setPlanMessage(null);
-      setAdding(true);
-
-      const beforeCount = stops.length;
-
-      await suggestCustomersForDate();
-      await new Promise((r) => setTimeout(r, 150));
-      await optimizeRoute();
-
-      const afterCount = stops.length;
-      const added = Math.max(0, afterCount - beforeCount);
-
-      setPlanMessage(
-        added > 0
-          ? `Rute planlagt • ${added} stop tilføjet • rute optimeret`
-          : "Rute planlagt • ingen nye stop • rute optimeret"
-      );
-
-      setTimeout(() => {
-        setPlanMessage(null);
-      }, 3500);
-    } catch (e: any) {
-      setError(String(e?.message ?? e));
-    } finally {
-      setAdding(false);
-    }
+    }, 3500);
+  } catch (e: any) {
+    setError(String(e?.message ?? e));
+  } finally {
+    setAdding(false);
   }
+}
 
   const filteredCustomers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -2743,7 +2768,7 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                         </button>
 
                         <button
-                          onClick={() => updateStop(s.id, { status: "planned", done_at: null }).catch((e) => setError(String(e?.message ?? e)))}
+                          onClick={() => resetStop(s).catch((e) => setError(String(e?.message ?? e)))}
                           style={{
                             padding: "8px 14px",
                             borderRadius: 12,
@@ -3168,7 +3193,7 @@ await deactivateSingleCustomerPlannedBins(updatedStop);
                       </button>
 
                       <button
-                        onClick={() => updateStop(s.id, { status: "planned", done_at: null }).catch((e) => setError(String(e?.message ?? e)))}
+                        onClick={() => resetStop(s).catch((e) => setError(String(e?.message ?? e)))}
                         style={{
                           padding: "10px 12px",
                           borderRadius: 12,
