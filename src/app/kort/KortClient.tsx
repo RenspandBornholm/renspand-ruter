@@ -1314,6 +1314,7 @@ for (const row of rows) {
     if (histErr) throw histErr;
   }
 }
+}
 async function addExtraBinToStop(stop: RouteStop, binType: string) {
   const currentBins = Array.isArray(stop.planned_bin_types)
     ? stop.planned_bin_types.filter(Boolean)
