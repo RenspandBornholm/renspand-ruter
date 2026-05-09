@@ -1296,7 +1296,9 @@ let plannedBins = Array.isArray(stop.planned_bin_types)
   ? stop.planned_bin_types.filter(Boolean)
   : [];
 
-plannedBins = plannedBins.filter((v) => allowedBinTypes.includes(v));
+plannedBins = Array.from(
+  new Set(plannedBins.filter((v) => allowedBinTypes.includes(v)))
+);
 
 if (plannedBins.length === 0) {
   throw new Error("Kunne ikke gemme historik: Dette stop har ingen planlagte spande.");
@@ -1314,25 +1316,14 @@ const rows = plannedBins.map((binType) => ({
   serviced_by_name: displayName,
 }));
 
-for (const row of rows) {
-  const { data: existing, error: checkErr } = await supabase
-    .from("service_history")
-    .select("id")
-    .eq("route_stop_id", row.route_stop_id)
-    .eq("bin_type", row.bin_type)
-    .eq("status", row.status)
-    .maybeSingle();
+const { error: histErr } = await supabase
+  .from("service_history")
+  .upsert(rows, {
+    onConflict: "route_stop_id,bin_type,status",
+    ignoreDuplicates: true,
+  });
 
-  if (checkErr) throw checkErr;
-
-  if (!existing) {
-    const { error: histErr } = await supabase
-      .from("service_history")
-      .insert(row);
-
-    if (histErr) throw histErr;
-  }
-}
+if (histErr) throw histErr;
 }
 async function addExtraBinToStop(stop: RouteStop, binType: string) {
   const currentBins = Array.isArray(stop.planned_bin_types)
